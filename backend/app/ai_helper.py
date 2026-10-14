@@ -1,9 +1,10 @@
-"""AI 辅助模块 v1：DeepSeek API 调用 + 无 key 时的本地规则引擎降级。
+"""AI 辅助模块 v1：OpenAI 兼容大模型 API 调用 + 无 key 时的本地规则引擎降级。
 
 v1 朴素实现说明：
-- API key 从环境变量 / .env 读取，未配置时 is_available() 返回 False，
-  上层接口自动走规则引擎（抽取式总结 / 关键词检索答疑 / 统计薄弱点分析）。
-- 供应商为 OpenAI 兼容协议，默认 DeepSeek (https://api.deepseek.com)。
+- 支持任意 OpenAI 兼容服务（智谱 GLM / 硅基流动 / DeepSeek / 通义千问 / Groq 等），
+  只需在 backend/.env 里配置 AI_API_KEY + AI_BASE_URL + AI_MODEL 三项。
+- 未配置 key 时 is_available() 返回 False，上层接口自动走规则引擎
+  （抽取式总结 / 关键词检索答疑 / 统计薄弱点分析）。
 """
 
 import json
@@ -14,10 +15,28 @@ from pathlib import Path
 import httpx
 
 # ---------- v1 硬编码配置（v2 重构目标：迁移到统一配置中心） ----------
-DEFAULT_BASE_URL = "https://api.deepseek.com"
-DEFAULT_MODEL = "deepseek-chat"
+DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"  # 智谱 GLM：永久免费额度
+DEFAULT_MODEL = "glm-4-flash"
 REQUEST_TIMEOUT = 60.0
 MAX_CONTEXT_CHARS = 4000  # 拼进 prompt 的资料片段上限
+
+# 常用免费/低价平台预设（套餐见 .env.example，切换只需改 .env 三行）
+PROVIDER_PRESETS = {
+    "zhipu": {"base_url": "https://open.bigmodel.cn/api/paas/v4", "model": "glm-4-flash"},
+    "siliconflow": {
+        "base_url": "https://api.siliconflow.cn/v1",
+        "model": "Qwen/Qwen2.5-7B-Instruct",
+    },
+    "deepseek": {"base_url": "https://api.deepseek.com", "model": "deepseek-chat"},
+    "dashscope": {
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "model": "qwen-turbo",
+    },
+    "openrouter": {
+        "base_url": "https://openrouter.ai/api/v1",
+        "model": "deepseek/deepseek-chat:free",
+    },
+}
 
 
 def _load_dotenv() -> None:
@@ -38,9 +57,14 @@ def _load_dotenv() -> None:
 _load_dotenv()
 
 
+def get_api_key() -> str:
+    """取 API key：优先通用名 AI_API_KEY，兼容早期的 DEEPSEEK_API_KEY。"""
+    return (os.environ.get("AI_API_KEY") or os.environ.get("DEEPSEEK_API_KEY") or "").strip()
+
+
 def is_available() -> bool:
     """是否配置了大模型 API key。"""
-    return bool(os.environ.get("DEEPSEEK_API_KEY", "").strip())
+    return bool(get_api_key())
 
 
 def get_base_url() -> str:
@@ -53,9 +77,9 @@ def get_model() -> str:
 
 def call_llm(system_prompt: str, user_prompt: str) -> str:
     """调用大模型（OpenAI 兼容 /chat/completions），返回文本回复。"""
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    api_key = get_api_key()
     if not api_key:
-        raise RuntimeError("未配置 DEEPSEEK_API_KEY")
+        raise RuntimeError("未配置 AI_API_KEY")
     resp = httpx.post(
         f"{get_base_url()}/chat/completions",
         headers={"Authorization": f"Bearer {api_key}"},
@@ -71,6 +95,41 @@ def call_llm(system_prompt: str, user_prompt: str) -> str:
     )
     resp.raise_for_status()
     return resp.json()["choices"][0]["message"]["content"]
+
+
+def test_connection() -> dict:
+    """连通性自检：发一条最短请求，验证 key / 地址 / 模型三项配置是否正确。"""
+    if not is_available():
+        return {
+            "ok": False,
+            "reason": "no_key",
+            "message": "未配置 AI_API_KEY（当前为规则引擎降级模式）",
+        }
+    try:
+        reply = call_llm("你是连通性测试助手，只回复两个字。", "请回复：正常")
+    except httpx.HTTPStatusError as e:
+        code = e.response.status_code
+        hint = {
+            401: "API key 无效或未激活",
+            402: "账户余额不足，请充值或换免费模型",
+            403: "无权限访问该模型，请检查模型名与实名认证状态",
+            404: "接口地址或模型名不存在，请核对 AI_BASE_URL / AI_MODEL",
+            429: "触发速率限制（免费额度常见），稍后重试",
+        }.get(code, "请核对配置")
+        return {
+            "ok": False,
+            "reason": f"http_{code}",
+            "message": f"调用失败：{hint}（HTTP {code}）",
+        }
+    except httpx.HTTPError as e:
+        return {"ok": False, "reason": "network", "message": f"网络不通：{e}"}
+    return {
+        "ok": True,
+        "reason": "ok",
+        "message": f"连接成功，模型回复：{reply.strip()[:30]}",
+        "base_url": get_base_url(),
+        "model": get_model(),
+    }
 
 
 # ==================== 文本处理工具（规则引擎与 RAG 共用） ====================

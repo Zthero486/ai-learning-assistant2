@@ -184,7 +184,12 @@ def build_context(chunks: list, limit: int = None) -> str:
 # ==================== 资料管理 ====================
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "ai_available": ai_helper.is_available()}
+    return {
+        "status": "ok",
+        "ai_available": ai_helper.is_available(),
+        "ai_base_url": ai_helper.get_base_url() if ai_helper.is_available() else None,
+        "ai_model": ai_helper.get_model() if ai_helper.is_available() else None,
+    }
 
 
 @app.post("/api/materials/upload")
@@ -570,6 +575,12 @@ def stats_overview():
 
 
 # ==================== AI 辅助 ====================
+@app.post("/api/ai/test")
+def ai_test():
+    """AI 连通性自检：验证 .env 中的 key / 地址 / 模型三项配置是否可用。"""
+    return ai_helper.test_connection()
+
+
 @app.post("/api/ai/summarize")
 def ai_summarize(body: dict):
     mid = body.get("material_id")

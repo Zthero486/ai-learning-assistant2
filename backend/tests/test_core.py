@@ -97,12 +97,18 @@ class TestFallbackEngine:
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
-    """用临时目录替换数据库与上传目录，返回 TestClient。"""
+    """用临时目录替换数据库与上传目录，返回 TestClient。
+
+    同时强制清空 AI key，保证测试永远走规则引擎、不会真实调用外部 API。
+    """
     test_db = tmp_path / "test.db"
     test_upload = tmp_path / "uploads"
     test_upload.mkdir()
     monkeypatch.setattr(app_main, "DB_PATH", test_db)
     monkeypatch.setattr(app_main, "UPLOAD_DIR", test_upload)
+    monkeypatch.delenv("AI_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "")  # is_available() 视为未配置
     # 重新初始化临时库
     app_main.init_db()
     from fastapi.testclient import TestClient
@@ -223,3 +229,37 @@ class TestTaskAPI:
         # 超出窗口的不算
         client.post("/api/tasks", json={"title": "远期任务", "due_date": "2099-01-01"})
         assert len(client.get("/api/tasks/due-soon", params={"days": 3}).json()) == 1
+
+
+# ==================== AI 引擎配置 ====================
+
+
+class TestAiConfig:
+    def test_key_读取优先级(self, monkeypatch):
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "old-key")
+        monkeypatch.delenv("AI_API_KEY", raising=False)
+        assert ai_helper.get_api_key() == "old-key"  # 兼容旧变量名
+        monkeypatch.setenv("AI_API_KEY", "new-key")
+        assert ai_helper.get_api_key() == "new-key"  # 通用变量优先
+
+    def test_免费平台预设齐全(self):
+        presets = ai_helper.PROVIDER_PRESETS
+        for name in ("zhipu", "siliconflow", "deepseek", "dashscope"):
+            assert presets[name]["base_url"].startswith("http")
+            assert presets[name]["model"]
+
+    def test_未配置key时自检给出明确原因(self, monkeypatch):
+        monkeypatch.delenv("AI_API_KEY", raising=False)
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+        result = ai_helper.test_connection()
+        assert result["ok"] is False and result["reason"] == "no_key"
+
+    def test_自检接口返回结构(self, client):
+        r = client.post("/api/ai/test")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["ok"] is False and "规则引擎" in body["message"]
+
+    def test_健康检查暴露引擎信息(self, client):
+        body = client.get("/api/health").json()
+        assert body["status"] == "ok" and body["ai_available"] is False
