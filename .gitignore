@@ -1,0 +1,31 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ---- 运行期数据（数据库、上传文件不入库）----
+data/*.db
+data/*.sqlite3
+data/uploads/*
+!data/uploads/.gitkeep
+
+# ---- Node / 前端 ----
+node_modules/
+dist/
+.vite/
+
+# ---- IDE / 系统 ----
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+.DS_Store
+
+# ---- 本地密钥与环境 ----
+.env
+*.local
