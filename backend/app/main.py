@@ -20,13 +20,15 @@ import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pypdf import PdfReader
 
-from . import ai_helper
+from . import ai_helper, apppaths
 
 # ==================== v1 硬编码配置（v2 重构目标：统一配置中心） ====================
-DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "app.db"
-UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "uploads"
+# 便携发布后 data/ 与 .env 均位于 exe 同级目录，整个文件夹拷贝即可换机运行
+DB_PATH = apppaths.app_base_dir() / "data" / "app.db"
+UPLOAD_DIR = apppaths.app_base_dir() / "data" / "uploads"
 ALLOWED_EXT = {
     ".pdf": "pdf",
     ".docx": "docx",
@@ -681,3 +683,11 @@ def due_soon(days: int = 3):
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ==================== 静态资源托管（便携发布用） ====================
+# 存在前端构建产物时，由后端直接托管页面，实现"双击 exe 即用、无需 Node"。
+# 开发态没有 frontend/dist 时自动跳过，仍走 Vite 开发服务器（5173）。
+_frontend = apppaths.frontend_dist()
+if _frontend is not None:
+    app.mount("/", StaticFiles(directory=str(_frontend), html=True), name="frontend")

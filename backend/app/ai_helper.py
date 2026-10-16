@@ -10,9 +10,10 @@ v1 朴素实现说明：
 import json
 import os
 import re
-from pathlib import Path
 
 import httpx
+
+from . import apppaths
 
 # ---------- v1 硬编码配置（v2 重构目标：迁移到统一配置中心） ----------
 DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"  # 智谱 GLM：永久免费额度
@@ -40,8 +41,11 @@ PROVIDER_PRESETS = {
 
 
 def _load_dotenv() -> None:
-    """朴素 .env 读取：只支持 KEY=VALUE 行，不覆盖已有环境变量。"""
-    env_file = Path(__file__).resolve().parent.parent / ".env"
+    """朴素 .env 读取：只支持 KEY=VALUE 行，不覆盖已有环境变量。
+
+    打包为便携版后读取 exe 同级的 .env，开发态读取 backend/.env。
+    """
+    env_file = apppaths.env_file()
     if not env_file.exists():
         return
     for line in env_file.read_text(encoding="utf-8").splitlines():
