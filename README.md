@@ -37,6 +37,16 @@ npm run dev
 
 Windows 下可直接双击 `scripts/start_all.bat` 一键启动。
 
+### 打包成便携版（免安装，双击即用）
+
+想给不使用开发环境的电脑用（答辩现场、拷给同学），执行：
+
+```bash
+python scripts/build_portable.py
+```
+
+产物在 `release/` 目录：**双击 `AILearningAssistant.exe` 即可运行**，自动启动服务并打开界面；数据保存在 exe 同级的 `data/` 目录，整个文件夹可整体拷贝到其他电脑。详见[打包与发布说明](docs/打包发布说明.md)。
+
 ### 配置 AI（可选，有免费方案）
 
 复制 `backend/.env.example` 为 `backend/.env`，填入 key（三家免费平台任选，代码无需改动）：
@@ -74,6 +84,7 @@ ai-learning-assistant/
 
 - [贡献指南与代码规范](CONTRIBUTING.md)
 - [团队分工、协作流程与绩效分配](docs/team.md)
+- [打包与发布说明（便携版）](docs/打包发布说明.md)
 - [工作量统计（自动生成）](docs/工作量统计.md)
 - [设计文档（重构对比）](docs/) —— v2 重构完成后补充 UML 与量化分析
 
