@@ -38,6 +38,7 @@ backend/frontend_dist/
 
 # ---- 分享压缩包（体积大，用网盘分发，不入库）----
 AI智能学习助手-*.zip
+AI智能学习助手-*/
 
 # ---- 便携版运行数据 ----
 release/data/
