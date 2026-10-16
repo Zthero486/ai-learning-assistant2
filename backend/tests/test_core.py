@@ -116,6 +116,11 @@ def client(tmp_path, monkeypatch):
     with TestClient(app_main.app) as c:
         yield c
 
+    # 清理：配置接口会直接改进程环境变量，避免污染其他用例
+    for name in ("AI_API_KEY", "AI_BASE_URL", "AI_MODEL"):
+        os.environ.pop(name, None)
+    os.environ["DEEPSEEK_API_KEY"] = ""
+
 
 def _upload(
     client, name="test.md", content="机器学习是人工智能的核心分支。深度学习属于机器学习。"
@@ -263,3 +268,60 @@ class TestAiConfig:
     def test_健康检查暴露引擎信息(self, client):
         body = client.get("/api/health").json()
         assert body["status"] == "ok" and body["ai_available"] is False
+
+
+class TestAiConfigAPI:
+    """软件内配置 AI：写回 .env 并即时生效。"""
+
+    def test_读取配置含预设与脱敏(self, client):
+        body = client.get("/api/config/ai").json()
+        assert body["configured"] is False
+        assert body["presets"]["zhipu"]["model"] == "glm-4-flash"
+        assert body["env_path"].endswith(".env")
+
+    def test_key_脱敏展示(self):
+        assert ai_helper.mask_key("") == ""
+        assert ai_helper.mask_key("short") == "****"
+        masked = ai_helper.mask_key("abcdefghijklmnop")
+        assert masked.startswith("abcd") and masked.endswith("mnop") and "*" in masked
+
+    def test_保存配置后立即生效(self, client, tmp_path, monkeypatch):
+        env_file = tmp_path / ".env"
+        monkeypatch.setattr(ai_helper.apppaths, "env_file", lambda: env_file)
+
+        resp = client.post(
+            "/api/config/ai",
+            json={
+                "api_key": "test-key-1234567890",
+                "base_url": "https://open.bigmodel.cn/api/paas/v4",
+                "model": "glm-4-flash",
+            },
+        )
+        assert resp.status_code == 200 and resp.json()["saved"] is True
+        # 写入文件
+        content = env_file.read_text(encoding="utf-8")
+        assert "AI_API_KEY=test-key-1234567890" in content
+        assert "AI_MODEL=glm-4-flash" in content
+        # 立即生效（无需重启）：健康检查变为已配置
+        assert client.get("/api/health").json()["ai_available"] is True
+        assert client.get("/api/config/ai").json()["api_key_masked"].startswith("test")
+
+    def test_短路或非法地址被拒绝(self, client):
+        assert client.post("/api/config/ai", json={"api_key": "abc"}).status_code == 400
+        assert (
+            client.post(
+                "/api/config/ai", json={"api_key": "abcdefghijk", "base_url": "ftp://x"}
+            ).status_code
+            == 400
+        )
+
+    def test_重复保存不重复追加字段(self, client, tmp_path, monkeypatch):
+        env_file = tmp_path / ".env"
+        monkeypatch.setattr(ai_helper.apppaths, "env_file", lambda: env_file)
+        for model in ("glm-4-flash", "glm-4.7-flash"):
+            client.post(
+                "/api/config/ai",
+                json={"api_key": "abcdefghijk", "base_url": "https://x.cn/v1", "model": model},
+            )
+        text = env_file.read_text(encoding="utf-8")
+        assert text.count("AI_MODEL=") == 1 and "glm-4.7-flash" in text

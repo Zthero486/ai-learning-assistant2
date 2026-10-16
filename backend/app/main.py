@@ -577,6 +577,40 @@ def stats_overview():
 
 
 # ==================== AI 辅助 ====================
+@app.get("/api/config/ai")
+def get_ai_config():
+    """查看当前 AI 配置（key 脱敏）与可选平台预设。"""
+    snapshot = ai_helper.config_snapshot()
+    snapshot["presets"] = ai_helper.PROVIDER_PRESETS
+    return snapshot
+
+
+@app.post("/api/config/ai")
+def set_ai_config(body: dict):
+    """在软件内配置 AI：写回 exe 同级的 .env 并即时生效，无需重启。"""
+    api_key = (body.get("api_key") or "").strip()
+    base_url = (body.get("base_url") or ai_helper.DEFAULT_BASE_URL).strip().rstrip("/")
+    model = (body.get("model") or ai_helper.DEFAULT_MODEL).strip()
+
+    if api_key and len(api_key) < 8:
+        raise HTTPException(400, "API Key 看起来不完整（长度过短），请检查是否复制齐全")
+    if not base_url.startswith("http"):
+        raise HTTPException(400, "接口地址必须以 http 开头")
+
+    try:
+        ai_helper.write_env_config(api_key, base_url, model)
+    except OSError as e:
+        raise HTTPException(500, f"配置写入失败：{e}（请确认程序所在目录可写）")
+
+    ai_helper.apply_runtime_config(api_key, base_url, model)
+    return {
+        "saved": True,
+        "configured": bool(api_key),
+        "env_path": str(apppaths.env_file()),
+        "message": "配置已保存并生效，可直接点击「检测 AI 连接」验证",
+    }
+
+
 @app.post("/api/ai/test")
 def ai_test():
     """AI 连通性自检：验证 .env 中的 key / 地址 / 模型三项配置是否可用。"""
