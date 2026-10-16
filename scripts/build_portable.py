@@ -26,6 +26,7 @@ BUNDLED_DIST = BACKEND / "frontend_dist"  # 随包分发的前端产物
 RELEASE = ROOT / "release"
 BUILD = ROOT / "build"
 EXE_NAME = "AILearningAssistant"
+VERSION = "1.0"
 
 USAGE_TEXT = """AI 智能学习助手 v1.0 —— 使用说明
 ====================================================
@@ -172,16 +173,48 @@ def assemble_release() -> None:
     print("=" * 56)
 
 
+def make_zip() -> None:
+    """把发布目录压成一个 zip，便于通过网盘 / U 盘 / 聊天工具传给同学。"""
+    import zipfile
+
+    if not (RELEASE / f"{EXE_NAME}.exe").exists():
+        sys.exit("未找到 release 中的 exe，请先完整构建一次")
+
+    archive = RELEASE.parent / f"AI智能学习助手-v{VERSION}-便携版.zip"
+    inner = f"AI智能学习助手-v{VERSION}"
+    skip_names = {"run.log"}
+    count = 0
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        for path in sorted(RELEASE.rglob("*")):
+            if path.name in skip_names:
+                continue
+            rel = path.relative_to(RELEASE)
+            zf.write(path, f"{inner}/{rel.as_posix()}")
+            if path.is_file():
+                count += 1
+    size_mb = archive.stat().st_size / 1024 / 1024
+    print(f"\n分享压缩包已生成：{archive.name}（{size_mb:.1f} MB，{count} 个文件）")
+    print("  接收方解压后双击 exe 即可运行，无需安装任何环境")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="构建便携绿色版")
     parser.add_argument("--skip-frontend", action="store_true", help="跳过前端构建（复用 frontend/dist）")
+    parser.add_argument("--zip-only", action="store_true", help="不重新构建，仅重新生成分享压缩包")
+    parser.add_argument("--no-zip", action="store_true", help="构建但不生成分享压缩包")
     args = parser.parse_args()
+
+    if args.zip_only:
+        make_zip()
+        return
 
     if not args.skip_frontend:
         build_frontend()
     bundle_frontend()
     build_exe()
     assemble_release()
+    if not args.no_zip:
+        make_zip()
 
 
 if __name__ == "__main__":
