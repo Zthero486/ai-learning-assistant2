@@ -29,3 +29,12 @@ Thumbs.db
 # ---- 本地密钥与环境 ----
 .env
 *.local
+
+# ---- 打包产物（由 scripts/build_portable.py 生成，不入库）----
+release/
+build/
+backend/frontend_dist/
+*.spec
+
+# ---- 便携版运行数据 ----
+release/data/
