@@ -60,7 +60,7 @@ AI_MODEL=glm-4-flash
 ## 目录结构
 
 ```
-ai-learning-assistant/
+ai-learning-assistant2/
 ├── backend/          # FastAPI 后端
 │   ├── app/          # 应用代码
 │   └── tests/        # pytest 测试

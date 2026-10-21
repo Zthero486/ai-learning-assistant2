@@ -93,7 +93,7 @@ python scripts/count_lines.py --write   # 生成 docs/工作量统计.md
 
 ```bash
 # 1. 克隆仓库并切出功能分支
-git clone <仓库地址> && cd ai-learning-assistant
+git clone <仓库地址> && cd ai-learning-assistant2
 git checkout develop && git checkout -b feat/frontend-enhance
 
 # 2. 启动前后端（Windows 双击）
