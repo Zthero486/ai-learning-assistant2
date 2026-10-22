@@ -4,6 +4,8 @@
 
 ![status](https://img.shields.io/badge/version-v1.0--naive-blue) ![python](https://img.shields.io/badge/python-3.10+-green) ![node](https://img.shields.io/badge/node-18+-green)
 
+> 📌 **协作成员请先读：[协作看板](docs/协作看板.md)** —— 谁做什么、做到哪一步，全部以看板为准，不看群聊不看口头。
+
 ## 功能总览
 
 | 模块 | 子功能 | 说明 |
@@ -88,6 +90,7 @@ ai-learning-assistant/
 
 ## 文档
 
+- [**协作看板**（任务分派与进度，成员每日必看）](docs/协作看板.md)
 - [贡献指南与代码规范](CONTRIBUTING.md)
 - [**项目交接说明**（接手者先读这个）](docs/交接说明.md)
 - [项目开发日志（决策与踩坑）](docs/项目开发日志.md)
