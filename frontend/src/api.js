@@ -47,6 +47,9 @@ export default {
   statsOverview: () => request('/api/stats/overview'),
   // AI
   aiHealth: () => request('/api/health'),
+  aiTest: () => request('/api/ai/test', { method: 'POST' }),
+  aiConfig: () => request('/api/config/ai'),
+  saveAiConfig: (body) => request('/api/config/ai', { method: 'POST', body: JSON.stringify(body) }),
   aiSummarize: (body) => request('/api/ai/summarize', { method: 'POST', body: JSON.stringify(body) }),
   aiAsk: (body) => request('/api/ai/ask', { method: 'POST', body: JSON.stringify(body) }),
   aiWeakAnalysis: (body) => request('/api/ai/weak-analysis', { method: 'POST', body: JSON.stringify(body) }),

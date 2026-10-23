@@ -10,9 +10,10 @@ v1 朴素实现说明：
 import json
 import os
 import re
-from pathlib import Path
 
 import httpx
+
+from . import apppaths
 
 # ---------- v1 硬编码配置（v2 重构目标：迁移到统一配置中心） ----------
 DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"  # 智谱 GLM：永久免费额度
@@ -40,8 +41,11 @@ PROVIDER_PRESETS = {
 
 
 def _load_dotenv() -> None:
-    """朴素 .env 读取：只支持 KEY=VALUE 行，不覆盖已有环境变量。"""
-    env_file = Path(__file__).resolve().parent.parent / ".env"
+    """朴素 .env 读取：只支持 KEY=VALUE 行，不覆盖已有环境变量。
+
+    打包为便携版后读取 exe 同级的 .env，开发态读取 backend/.env。
+    """
+    env_file = apppaths.env_file()
     if not env_file.exists():
         return
     for line in env_file.read_text(encoding="utf-8").splitlines():
@@ -73,6 +77,62 @@ def get_base_url() -> str:
 
 def get_model() -> str:
     return os.environ.get("AI_MODEL", DEFAULT_MODEL)
+
+
+def mask_key(key: str) -> str:
+    """脱敏展示 key，避免完整回显到界面或日志。"""
+    if not key:
+        return ""
+    return key[:4] + "*" * max(len(key) - 8, 4) + key[-4:] if len(key) >= 10 else "****"
+
+
+def apply_runtime_config(api_key: str, base_url: str, model: str) -> None:
+    """把配置写入当前进程环境，使设置立即生效（无需重启程序）。"""
+    os.environ["AI_API_KEY"] = api_key
+    os.environ["AI_BASE_URL"] = base_url
+    os.environ["AI_MODEL"] = model
+
+
+def write_env_config(api_key: str, base_url: str, model: str) -> None:
+    """把 AI 配置写回 .env（保留其他行与注释），使用 UTF-8 无 BOM。"""
+    path = apppaths.env_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pairs = {"AI_API_KEY": api_key, "AI_BASE_URL": base_url, "AI_MODEL": model}
+
+    lines = []
+    if path.exists():
+        lines = path.read_text(encoding="utf-8").splitlines()
+
+    handled = set()
+    out = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("#") or "=" not in stripped:
+            out.append(line)
+            continue
+        name = stripped.split("=", 1)[0].strip()
+        if name in pairs:
+            out.append(f"{name}={pairs[name]}")
+            handled.add(name)
+        else:
+            out.append(line)
+    for name, value in pairs.items():
+        if name not in handled:
+            out.append(f"{name}={value}")
+
+    path.write_text("\n".join(out).rstrip("\n") + "\n", encoding="utf-8")
+
+
+def config_snapshot() -> dict:
+    """当前 AI 配置（key 已脱敏），供界面展示。"""
+    key = get_api_key()
+    return {
+        "configured": bool(key),
+        "api_key_masked": mask_key(key),
+        "base_url": get_base_url(),
+        "model": get_model(),
+        "env_path": str(apppaths.env_file()),
+    }
 
 
 def call_llm(system_prompt: str, user_prompt: str) -> str:

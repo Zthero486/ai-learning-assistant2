@@ -20,13 +20,16 @@ import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pypdf import PdfReader
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import ai_helper
+from . import ai_helper, apppaths
 
 # ==================== v1 硬编码配置（v2 重构目标：统一配置中心） ====================
-DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "app.db"
-UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "uploads"
+# 便携发布后 data/ 与 .env 均位于 exe 同级目录，整个文件夹拷贝即可换机运行
+DB_PATH = apppaths.app_base_dir() / "data" / "app.db"
+UPLOAD_DIR = apppaths.app_base_dir() / "data" / "uploads"
 ALLOWED_EXT = {
     ".pdf": "pdf",
     ".docx": "docx",
@@ -575,6 +578,40 @@ def stats_overview():
 
 
 # ==================== AI 辅助 ====================
+@app.get("/api/config/ai")
+def get_ai_config():
+    """查看当前 AI 配置（key 脱敏）与可选平台预设。"""
+    snapshot = ai_helper.config_snapshot()
+    snapshot["presets"] = ai_helper.PROVIDER_PRESETS
+    return snapshot
+
+
+@app.post("/api/config/ai")
+def set_ai_config(body: dict):
+    """在软件内配置 AI：写回 exe 同级的 .env 并即时生效，无需重启。"""
+    api_key = (body.get("api_key") or "").strip()
+    base_url = (body.get("base_url") or ai_helper.DEFAULT_BASE_URL).strip().rstrip("/")
+    model = (body.get("model") or ai_helper.DEFAULT_MODEL).strip()
+
+    if api_key and len(api_key) < 8:
+        raise HTTPException(400, "API Key 看起来不完整（长度过短），请检查是否复制齐全")
+    if not base_url.startswith("http"):
+        raise HTTPException(400, "接口地址必须以 http 开头")
+
+    try:
+        ai_helper.write_env_config(api_key, base_url, model)
+    except OSError as e:
+        raise HTTPException(500, f"配置写入失败：{e}（请确认程序所在目录可写）")
+
+    ai_helper.apply_runtime_config(api_key, base_url, model)
+    return {
+        "saved": True,
+        "configured": bool(api_key),
+        "env_path": str(apppaths.env_file()),
+        "message": "配置已保存并生效，可直接点击「检测 AI 连接」验证",
+    }
+
+
 @app.post("/api/ai/test")
 def ai_test():
     """AI 连通性自检：验证 .env 中的 key / 地址 / 模型三项配置是否可用。"""
@@ -681,3 +718,28 @@ def due_soon(days: int = 3):
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ==================== 静态资源托管（便携发布用） ====================
+# 存在前端构建产物时，由后端直接托管页面，实现"双击 exe 即用、无需 Node"。
+# 开发态没有 frontend/dist 时自动跳过，仍走 Vite 开发服务器（5173）。
+class _SPAStaticFiles(StaticFiles):
+    """前端走 history 路由，磁盘上并没有 /practice 这样的文件。
+
+    找不到文件就回落 index.html，交给 vue-router 自己分发；
+    /api/ 下未命中的路径保持 404，避免接口错误被一份 HTML 掩盖。
+    """
+
+    async def get_response(self, path, scope):
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            raw = (scope.get("path") or path or "").lstrip("/")
+            if exc.status_code == 404 and not raw.startswith("api/"):
+                return await super().get_response("index.html", scope)
+            raise
+
+
+_frontend = apppaths.frontend_dist()
+if _frontend is not None:
+    app.mount("/", _SPAStaticFiles(directory=str(_frontend), html=True), name="frontend")

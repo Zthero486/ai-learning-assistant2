@@ -1,4 +1,65 @@
 <template>
+  <el-card class="page-card">
+    <template #header>AI 引擎状态</template>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <el-tag :type="aiAvailable ? 'success' : 'warning'" size="large">
+        {{ aiAvailable === null ? '检测中…' : (aiAvailable ? '已接入大模型 API' : '未配置 API Key（规则引擎模式）') }}
+      </el-tag>
+      <el-button size="small" @click="checkConnection" :loading="checkLoading">检测 AI 连接</el-button>
+      <el-button size="small" type="primary" @click="openConfig">配置 API Key</el-button>
+      <span class="muted">
+        未配置时软件照常可用：答疑走资料检索、总结走抽取式、薄弱点走统计分析。
+      </span>
+    </div>
+    <el-alert
+      v-if="checkResult"
+      :type="checkResult.ok ? 'success' : 'warning'"
+      :closable="false"
+      show-icon
+      style="margin-top:10px"
+      :title="checkResult.message"
+      :description="checkResult.ok ? `接口地址：${checkResult.base_url || ''}　模型：${checkResult.model || ''}` : '免费方案：智谱 GLM-4-Flash（open.bigmodel.cn）注册后即可获得 API Key；也可点「配置 API Key」在软件内直接填写，无需手工改文件。'"
+    />
+  </el-card>
+
+  <el-dialog v-model="configVisible" title="配置 AI 大模型（可选）" width="560px">
+    <el-alert
+      type="info"
+      :closable="false"
+      show-icon
+      title="不配置也能用，配置后答疑/总结/出题将由大模型驱动"
+      description="推荐智谱 GLM-4-Flash：永久免费、国内直连。注册地址 open.bigmodel.cn → 控制台 → API Keys，复制后粘贴到下方。"
+      style="margin-bottom:14px"
+    />
+    <el-form label-width="90px">
+      <el-form-item label="平台预设">
+        <el-select v-model="config.preset" style="width:100%" @change="applyPreset">
+          <el-option label="智谱 GLM（推荐，永久免费）" value="zhipu" />
+          <el-option label="硅基流动 SiliconFlow（9B 以下免费）" value="siliconflow" />
+          <el-option label="阿里云百炼（新用户额度）" value="dashscope" />
+          <el-option label="DeepSeek（付费，推理强）" value="deepseek" />
+          <el-option label="OpenRouter（免费模型）" value="openrouter" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="API Key">
+        <el-input v-model="config.api_key" placeholder="粘贴你的 API Key" show-password />
+      </el-form-item>
+      <el-form-item label="接口地址">
+        <el-input v-model="config.base_url" />
+      </el-form-item>
+      <el-form-item label="模型名">
+        <el-input v-model="config.model" />
+      </el-form-item>
+      <el-form-item label="配置文件">
+        <span class="muted">{{ config.env_path || '程序目录下的 .env' }}</span>
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="configVisible = false">取消</el-button>
+      <el-button type="primary" :loading="saveLoading" @click="saveConfig">保存并生效</el-button>
+    </template>
+  </el-dialog>
+
   <el-row :gutter="16">
     <!-- 答疑 -->
     <el-col :span="12">
@@ -44,9 +105,89 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api'
+
+const aiAvailable = ref(null)
+const checkLoading = ref(false)
+const checkResult = ref(null)
+const configVisible = ref(false)
+const saveLoading = ref(false)
+const presets = ref({})
+const config = ref({ preset: 'zhipu', api_key: '', base_url: '', model: '', env_path: '' })
+
+async function loadStatus() {
+  try {
+    const h = await api.aiHealth()
+    aiAvailable.value = h.ai_available
+  } catch {
+    aiAvailable.value = null
+  }
+}
+
+async function openConfig() {
+  try {
+    const c = await api.aiConfig()
+    presets.value = c.presets || {}
+    config.value = {
+      preset: 'zhipu',
+      api_key: '',
+      base_url: c.base_url,
+      model: c.model,
+      env_path: c.env_path,
+    }
+    configVisible.value = true
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
+function applyPreset(name) {
+  const p = presets.value[name]
+  if (p) {
+    config.value.base_url = p.base_url
+    config.value.model = p.model
+  }
+}
+
+async function saveConfig() {
+  if (!config.value.api_key.trim()) return ElMessage.warning('请先粘贴 API Key')
+  saveLoading.value = true
+  try {
+    const r = await api.saveAiConfig({
+      api_key: config.value.api_key.trim(),
+      base_url: config.value.base_url,
+      model: config.value.model,
+    })
+    ElMessage.success(r.message)
+    configVisible.value = false
+    config.value.api_key = ''
+    await loadStatus()
+    await checkConnection()
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    saveLoading.value = false
+  }
+}
+
+async function checkConnection() {
+  checkLoading.value = true
+  try {
+    const r = await api.aiTest()
+    checkResult.value = r
+    aiAvailable.value = r.ok
+    if (r.ok) ElMessage.success('AI 连接正常')
+  } catch (e) {
+    checkResult.value = { ok: false, message: e.message }
+    ElMessage.error(e.message)
+  } finally {
+    checkLoading.value = false
+  }
+}
+
+onMounted(loadStatus)
 
 const ask = ref({ question: '', material_id: '' })
 const askLoading = ref(false)

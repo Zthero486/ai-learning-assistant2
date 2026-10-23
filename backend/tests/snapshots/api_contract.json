@@ -1,0 +1,673 @@
+{
+  "openapi": {
+    "DELETE /api/knowledge-points/{kid}": {
+      "operation_id": "delete_kp_api_knowledge_points__kid__delete",
+      "params": [
+        {
+          "in": "path",
+          "name": "kid",
+          "required": true,
+          "schema": "integer"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "DELETE /api/materials/{mid}": {
+      "operation_id": "delete_material_api_materials__mid__delete",
+      "params": [
+        {
+          "in": "path",
+          "name": "mid",
+          "required": true,
+          "schema": "integer"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "DELETE /api/tasks/{tid}": {
+      "operation_id": "delete_task_api_tasks__tid__delete",
+      "params": [
+        {
+          "in": "path",
+          "name": "tid",
+          "required": true,
+          "schema": "integer"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "GET /api/config/ai": {
+      "operation_id": "get_ai_config_api_config_ai_get",
+      "params": [],
+      "request_body": null,
+      "responses": [
+        "200"
+      ]
+    },
+    "GET /api/health": {
+      "operation_id": "health_api_health_get",
+      "params": [],
+      "request_body": null,
+      "responses": [
+        "200"
+      ]
+    },
+    "GET /api/knowledge-points": {
+      "operation_id": "list_kps_api_knowledge_points_get",
+      "params": [
+        {
+          "in": "query",
+          "name": "course",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "GET /api/materials": {
+      "operation_id": "list_materials_api_materials_get",
+      "params": [
+        {
+          "in": "query",
+          "name": "course",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "GET /api/materials/{mid}": {
+      "operation_id": "get_material_api_materials__mid__get",
+      "params": [
+        {
+          "in": "path",
+          "name": "mid",
+          "required": true,
+          "schema": "integer"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "GET /api/questions": {
+      "operation_id": "list_questions_api_questions_get",
+      "params": [
+        {
+          "in": "query",
+          "name": "kp_id",
+          "required": false,
+          "schema": "integer"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "GET /api/stats/overview": {
+      "operation_id": "stats_overview_api_stats_overview_get",
+      "params": [],
+      "request_body": null,
+      "responses": [
+        "200"
+      ]
+    },
+    "GET /api/tasks": {
+      "operation_id": "list_tasks_api_tasks_get",
+      "params": [],
+      "request_body": null,
+      "responses": [
+        "200"
+      ]
+    },
+    "GET /api/tasks/due-soon": {
+      "operation_id": "due_soon_api_tasks_due_soon_get",
+      "params": [
+        {
+          "in": "query",
+          "name": "days",
+          "required": false,
+          "schema": "integer"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "GET /api/wrong-book": {
+      "operation_id": "wrong_book_api_wrong_book_get",
+      "params": [
+        {
+          "in": "query",
+          "name": "only_unresolved",
+          "required": false,
+          "schema": "boolean"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "PATCH /api/tasks/{tid}/status": {
+      "operation_id": "set_task_status_api_tasks__tid__status_patch",
+      "params": [
+        {
+          "in": "path",
+          "name": "tid",
+          "required": true,
+          "schema": "integer"
+        }
+      ],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "PATCH /api/wrong-book/{wid}": {
+      "operation_id": "update_wrong_api_wrong_book__wid__patch",
+      "params": [
+        {
+          "in": "path",
+          "name": "wid",
+          "required": true,
+          "schema": "integer"
+        }
+      ],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "POST /api/ai/ask": {
+      "operation_id": "ai_ask_api_ai_ask_post",
+      "params": [],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "POST /api/ai/summarize": {
+      "operation_id": "ai_summarize_api_ai_summarize_post",
+      "params": [],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "POST /api/ai/test": {
+      "operation_id": "ai_test_api_ai_test_post",
+      "params": [],
+      "request_body": null,
+      "responses": [
+        "200"
+      ]
+    },
+    "POST /api/ai/weak-analysis": {
+      "operation_id": "ai_weak_analysis_api_ai_weak_analysis_post",
+      "params": [],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "POST /api/config/ai": {
+      "operation_id": "set_ai_config_api_config_ai_post",
+      "params": [],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "POST /api/knowledge-points": {
+      "operation_id": "create_kp_api_knowledge_points_post",
+      "params": [],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "POST /api/materials/upload": {
+      "operation_id": "upload_material_api_materials_upload_post",
+      "params": [],
+      "request_body": {
+        "content": [
+          "form:[]:required=[]"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "POST /api/practice/submit": {
+      "operation_id": "submit_practice_api_practice_submit_post",
+      "params": [],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "POST /api/questions/generate": {
+      "operation_id": "generate_questions_api_questions_generate_post",
+      "params": [],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "POST /api/tasks": {
+      "operation_id": "create_task_api_tasks_post",
+      "params": [],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "PUT /api/knowledge-points/{kid}": {
+      "operation_id": "update_kp_api_knowledge_points__kid__put",
+      "params": [
+        {
+          "in": "path",
+          "name": "kid",
+          "required": true,
+          "schema": "integer"
+        }
+      ],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    }
+  },
+  "probes": {
+    "GET /api/config/ai": {
+      "get": {
+        "body": {
+          "api_key_masked": "string",
+          "base_url": "string",
+          "configured": "boolean",
+          "env_path": "string",
+          "model": "string",
+          "presets": {
+            "dashscope": {
+              "base_url": "string",
+              "model": "string"
+            },
+            "deepseek": {
+              "base_url": "string",
+              "model": "string"
+            },
+            "openrouter": {
+              "base_url": "string",
+              "model": "string"
+            },
+            "siliconflow": {
+              "base_url": "string",
+              "model": "string"
+            },
+            "zhipu": {
+              "base_url": "string",
+              "model": "string"
+            }
+          }
+        },
+        "status": 200
+      },
+      "post_400_key": {
+        "body": {
+          "detail": "string"
+        },
+        "status": 400
+      },
+      "post_400_url": {
+        "body": {
+          "detail": "string"
+        },
+        "status": 400
+      },
+      "preset_item": {
+        "base_url": "string",
+        "model": "string"
+      },
+      "presets": [
+        "dashscope",
+        "deepseek",
+        "openrouter",
+        "siliconflow",
+        "zhipu"
+      ]
+    },
+    "GET /api/health": {
+      "body": {
+        "ai_available": "boolean",
+        "ai_base_url": "null",
+        "ai_model": "null",
+        "status": "string"
+      },
+      "status": 200
+    },
+    "GET /api/knowledge-points": {
+      "create_400": {
+        "body": {
+          "detail": "string"
+        },
+        "status": 400
+      },
+      "list": {
+        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"id\": \"integer\", \"material_id\": \"integer\", \"material_title\": \"string\", \"question_count\": \"integer\", \"title\": \"string\"}>",
+        "status": 200
+      },
+      "list_filtered": {
+        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"id\": \"integer\", \"material_id\": \"integer\", \"material_title\": \"string\", \"question_count\": \"integer\", \"title\": \"string\"}>",
+        "status": 200
+      },
+      "update": {
+        "body": {
+          "updated": "integer"
+        },
+        "status": 200
+      },
+      "update_400": {
+        "body": {
+          "detail": "string"
+        },
+        "status": 400
+      }
+    },
+    "GET /api/materials": {
+      "detail": {
+        "body": {
+          "content": "string",
+          "course": "string",
+          "created_at": "string",
+          "filename": "string",
+          "filetype": "string",
+          "id": "integer",
+          "title": "string"
+        },
+        "status": 200
+      },
+      "detail_404": {
+        "body": {
+          "detail": "string"
+        },
+        "status": 404
+      },
+      "list": {
+        "body": "list<{\"chars\": \"integer\", \"course\": \"string\", \"created_at\": \"string\", \"filetype\": \"string\", \"id\": \"integer\", \"title\": \"string\"}>",
+        "status": 200
+      },
+      "list_empty": {
+        "body": "list<any>",
+        "status": 200
+      },
+      "upload_400": {
+        "body": {
+          "detail": "string"
+        },
+        "status": 400
+      }
+    },
+    "GET /api/questions": {
+      "generate_404": {
+        "body": {
+          "detail": "string"
+        },
+        "status": 404
+      },
+      "list": {
+        "body": "list<{\"answer\": \"string\", \"created_at\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"question\": \"string\", \"source\": \"string\", \"type\": \"string\"}>",
+        "status": 200
+      },
+      "list_by_kp": {
+        "body": "list<{\"answer\": \"string\", \"created_at\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"question\": \"string\", \"source\": \"string\", \"type\": \"string\"}>",
+        "status": 200
+      },
+      "submit": {
+        "body": {
+          "correct": "boolean",
+          "recorded": "boolean"
+        },
+        "status": 200
+      },
+      "submit_404": {
+        "body": {
+          "detail": "string"
+        },
+        "status": 404
+      }
+    },
+    "GET /api/stats/overview": {
+      "body": {
+        "per_kp": "list<{\"accuracy\": \"number\", \"attempts\": \"integer\", \"course\": \"string\", \"kp_id\": \"integer\", \"title\": \"string\", \"weak\": \"boolean\"}>",
+        "totals": {
+          "attempts": "integer",
+          "kps": "integer",
+          "materials": "integer",
+          "open_tasks": "integer",
+          "unresolved_wrong": "integer"
+        }
+      },
+      "status": 200
+    },
+    "GET /api/tasks": {
+      "create_400": {
+        "body": {
+          "detail": "string"
+        },
+        "status": 400
+      },
+      "due_soon": {
+        "body": "list<any>",
+        "status": 200
+      },
+      "due_soon_wide": {
+        "body": "list<any>",
+        "status": 200
+      },
+      "due_soon_wide_has_item": false,
+      "list": {
+        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"due_date\": \"string\", \"id\": \"integer\", \"kp_id\": \"null\", \"kp_title\": \"null\", \"overdue\": \"integer\", \"status\": \"string\", \"title\": \"string\"}>",
+        "status": 200
+      },
+      "patch_status": {
+        "body": {
+          "status": "string",
+          "updated": "integer"
+        },
+        "status": 200
+      },
+      "patch_status_400": {
+        "body": {
+          "detail": "string"
+        },
+        "status": 400
+      },
+      "patch_status_404": {
+        "body": {
+          "detail": "string"
+        },
+        "status": 404
+      }
+    },
+    "GET /api/wrong-book": {
+      "list": {
+        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"wrong_count\": \"integer\"}>",
+        "status": 200
+      },
+      "list_all": {
+        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"wrong_count\": \"integer\"}>",
+        "status": 200
+      },
+      "list_has_item": true,
+      "patch": {
+        "body": {
+          "updated": "integer"
+        },
+        "status": 200
+      },
+      "patch_400": {
+        "body": {
+          "detail": "string"
+        },
+        "status": 400
+      },
+      "patch_404": {
+        "body": {
+          "detail": "string"
+        },
+        "status": 404
+      }
+    },
+    "POST /api/ai/test": {
+      "ask": {
+        "body": {
+          "answer": "string",
+          "mode": "string"
+        },
+        "status": 200
+      },
+      "ask_400": {
+        "body": {
+          "detail": "string"
+        },
+        "status": 400
+      },
+      "summarize": {
+        "body": {
+          "mode": "string",
+          "summary": "string"
+        },
+        "status": 200
+      },
+      "summarize_404": {
+        "body": {
+          "detail": "string"
+        },
+        "status": 404
+      },
+      "test": {
+        "body": {
+          "message": "string",
+          "ok": "boolean",
+          "reason": "string"
+        },
+        "status": 200
+      },
+      "weak_analysis": {
+        "body": {
+          "advice": "string",
+          "mode": "string",
+          "weak_kps": "list<{\"accuracy\": \"number\", \"attempts\": \"integer\", \"course\": \"string\", \"kp_id\": \"integer\", \"title\": \"string\", \"weak\": \"boolean\"}>"
+        },
+        "status": 200
+      }
+    },
+    "POST /api/materials/upload": {
+      "body": {
+        "chars": "integer",
+        "course": "string",
+        "id": "integer",
+        "title": "string"
+      },
+      "id_field": true,
+      "status": 200
+    }
+  },
+  "version": 1
+}
