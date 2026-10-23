@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pypdf import PdfReader
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import ai_helper, apppaths
 
@@ -722,6 +723,23 @@ def due_soon(days: int = 3):
 # ==================== 静态资源托管（便携发布用） ====================
 # 存在前端构建产物时，由后端直接托管页面，实现"双击 exe 即用、无需 Node"。
 # 开发态没有 frontend/dist 时自动跳过，仍走 Vite 开发服务器（5173）。
+class _SPAStaticFiles(StaticFiles):
+    """前端走 history 路由，磁盘上并没有 /practice 这样的文件。
+
+    找不到文件就回落 index.html，交给 vue-router 自己分发；
+    /api/ 下未命中的路径保持 404，避免接口错误被一份 HTML 掩盖。
+    """
+
+    async def get_response(self, path, scope):
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            raw = (scope.get("path") or path or "").lstrip("/")
+            if exc.status_code == 404 and not raw.startswith("api/"):
+                return await super().get_response("index.html", scope)
+            raise
+
+
 _frontend = apppaths.frontend_dist()
 if _frontend is not None:
-    app.mount("/", StaticFiles(directory=str(_frontend), html=True), name="frontend")
+    app.mount("/", _SPAStaticFiles(directory=str(_frontend), html=True), name="frontend")
