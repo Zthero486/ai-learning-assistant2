@@ -8,6 +8,18 @@
 
 跨 fork 的 Pull Request 只能由 fork 的主人（你）发起，我这边代建会被 GitHub 拒绝（错误码 422 `fork_collab`）。所以要你亲手点几下。
 
+## 动手前：先把你的分支同步到最新 develop
+
+develop 在 2026-10-23 已经前进到 `7f2191d`，`README.md` 被我加过内容。你的分支如果还基于旧的 `707b74a`，PR 会显示 README 冲突。
+
+```bash
+git checkout fix/docs-repo-dir-name      # 换成你的实际分支名
+git fetch upstream
+git rebase upstream/develop
+# 有冲突就解决后 git add + git rebase --continue
+git push --force-with-lease origin fix/docs-repo-dir-name
+```
+
 ## 操作步骤
 
 ### 第一步：打开对比页
