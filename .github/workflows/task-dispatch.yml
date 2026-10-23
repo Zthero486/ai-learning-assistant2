@@ -1,0 +1,45 @@
+name: 任务分派
+
+# 目的：把「口头传话」换成「GitHub 自动通知」。
+#
+# 触发条件刻意收窄到只关心任务的文件：
+#   - docs/协作看板.md   任务状态变化
+#   - docs/tasks/**      任务卡内容变化
+# 改代码不会触发，避免无意义的通知。
+#
+# 产物：为「负责人 = 黄吉航」且未完成的任务建/更新 Issue，
+#      对方被 @mention，GitHub 会给他发邮件 + 手机 App 推送。
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "docs/协作看板.md"
+      - "docs/tasks/**"
+  workflow_dispatch:
+
+# 显式声明写权限：不加这行，GITHUB_TOKEN 可能只有读权限，建 Issue 会 403。
+permissions:
+  contents: read
+  issues: write
+
+# 连续推送时只保留最后一次，避免并发改同一个 Issue。
+concurrency:
+  group: task-dispatch
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 同步看板任务到 Issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python scripts/sync_tasks_to_issues.py
