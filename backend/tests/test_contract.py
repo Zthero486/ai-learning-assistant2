@@ -55,10 +55,14 @@ SNAPSHOT_VERSION = 1
 # 静态资源托管（frontend/dist）存在时会多挂一个 "/" 路由，与契约无关
 STATIC_PATHS = {"/"}
 
-# ==================== 接口清单（26 个业务接口，手工登记） ====================
+# ==================== 接口清单（30 个接口，手工登记） ====================
 # "METHOD /path"：与 main.py 中 @app.xxx 装饰器一一对应，改接口必须同步改这里。
 CONTRACT_MANIFEST = {
     "GET /api/health",
+    "POST /api/auth/register",
+    "POST /api/auth/login",
+    "GET /api/auth/me",
+    "POST /api/auth/logout",
     "POST /api/materials/upload",
     "GET /api/materials",
     "GET /api/materials/{mid}",
@@ -428,7 +432,10 @@ def client(tmp_path, monkeypatch):
     monkeypatch.delenv("AI_API_KEY", raising=False)
     monkeypatch.setenv("DEEPSEEK_API_KEY", "")
     app_main.init_db()
+    from tests.conftest import attach_auth
+
     with TestClient(app_main.app) as c:
+        attach_auth(c)  # 接口都要求登录，快照探针也必须在登录态下采集
         yield c
     for name in ("AI_API_KEY", "AI_BASE_URL", "AI_MODEL"):
         os.environ.pop(name, None)
@@ -492,7 +499,7 @@ def test_接口清单与实测一致():
         f"  清单里有、代码里没有：{sorted(CONTRACT_MANIFEST - actual)}\n"
         "新增/删除接口时，请同步更新 CONTRACT_MANIFEST 并刷新快照。"
     )
-    assert len(CONTRACT_MANIFEST) == 26, f"业务接口数量应为 26，当前 {len(CONTRACT_MANIFEST)}"
+    assert len(CONTRACT_MANIFEST) == 30, f"接口数量应为 30，当前 {len(CONTRACT_MANIFEST)}"
 
 
 def test_openapi_与路由表一致():
@@ -617,6 +624,9 @@ def regenerate() -> int:
         os.environ.pop("AI_API_KEY", None)
         os.environ["DEEPSEEK_API_KEY"] = ""
         with TestClient(app_main.app) as c:
+            from tests.conftest import attach_auth
+
+            attach_auth(c)
             scenario = _build_scenario(c)
             probes = [
                 ("GET /api/health", _probe_health, False),

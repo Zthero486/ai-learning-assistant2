@@ -6,7 +6,7 @@ import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import App from './App.vue'
 import api from './api'
 
-// v1 朴素路由：视图级组件 + 两个简单守卫（v2 引入 Pinia 全局状态）
+// v1.1 朴素路由：视图级组件 + 登录守卫（v2 引入 Pinia 全局状态）
 import Dashboard from './views/Dashboard.vue'
 import Materials from './views/Materials.vue'
 import KnowledgePoints from './views/KnowledgePoints.vue'
@@ -14,10 +14,13 @@ import Tasks from './views/Tasks.vue'
 import Practice from './views/Practice.vue'
 import WrongBook from './views/WrongBook.vue'
 import AiAssistant from './views/AiAssistant.vue'
+import Login from './views/Login.vue'
+import { auth } from './api'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
+    { path: '/login', name: 'login', component: Login, meta: { title: '登录', public: true } },
     { path: '/', name: 'dashboard', component: Dashboard, meta: { title: '学习看板' } },
     { path: '/materials', name: 'materials', component: Materials, meta: { title: '课程资料' } },
     { path: '/knowledge', name: 'knowledge', component: KnowledgePoints, meta: { title: '知识点' } },
@@ -26,6 +29,12 @@ const router = createRouter({
     { path: '/wrong-book', name: 'wrongBook', component: WrongBook, meta: { title: '错题本' } },
     { path: '/ai', name: 'ai', component: AiAssistant, meta: { title: 'AI 助手' } },
   ],
+})
+
+// 未登录一律回登录页；已登录访问 /login 则直接进看板
+router.beforeEach((to) => {
+  if (to.meta.public) return auth.token() ? { path: '/' } : true
+  return auth.token() ? true : { path: '/login' }
 })
 
 router.afterEach((to) => {

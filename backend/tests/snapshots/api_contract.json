@@ -4,6 +4,12 @@
       "operation_id": "delete_kp_api_knowledge_points__kid__delete",
       "params": [
         {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
           "in": "path",
           "name": "kid",
           "required": true,
@@ -19,6 +25,12 @@
     "DELETE /api/materials/{mid}": {
       "operation_id": "delete_material_api_materials__mid__delete",
       "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
         {
           "in": "path",
           "name": "mid",
@@ -36,6 +48,12 @@
       "operation_id": "delete_task_api_tasks__tid__delete",
       "params": [
         {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
           "in": "path",
           "name": "tid",
           "required": true,
@@ -48,12 +66,36 @@
         "422"
       ]
     },
-    "GET /api/config/ai": {
-      "operation_id": "get_ai_config_api_config_ai_get",
-      "params": [],
+    "GET /api/auth/me": {
+      "operation_id": "me_api_auth_me_get",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
       "request_body": null,
       "responses": [
-        "200"
+        "200",
+        "422"
+      ]
+    },
+    "GET /api/config/ai": {
+      "operation_id": "get_ai_config_api_config_ai_get",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
       ]
     },
     "GET /api/health": {
@@ -67,6 +109,12 @@
     "GET /api/knowledge-points": {
       "operation_id": "list_kps_api_knowledge_points_get",
       "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
         {
           "in": "query",
           "name": "course",
@@ -84,6 +132,12 @@
       "operation_id": "list_materials_api_materials_get",
       "params": [
         {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
           "in": "query",
           "name": "course",
           "required": false,
@@ -99,6 +153,12 @@
     "GET /api/materials/{mid}": {
       "operation_id": "get_material_api_materials__mid__get",
       "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
         {
           "in": "path",
           "name": "mid",
@@ -116,6 +176,12 @@
       "operation_id": "list_questions_api_questions_get",
       "params": [
         {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
           "in": "query",
           "name": "kp_id",
           "required": false,
@@ -130,23 +196,45 @@
     },
     "GET /api/stats/overview": {
       "operation_id": "stats_overview_api_stats_overview_get",
-      "params": [],
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
       "request_body": null,
       "responses": [
-        "200"
+        "200",
+        "422"
       ]
     },
     "GET /api/tasks": {
       "operation_id": "list_tasks_api_tasks_get",
-      "params": [],
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
       "request_body": null,
       "responses": [
-        "200"
+        "200",
+        "422"
       ]
     },
     "GET /api/tasks/due-soon": {
       "operation_id": "due_soon_api_tasks_due_soon_get",
       "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
         {
           "in": "query",
           "name": "days",
@@ -164,6 +252,12 @@
       "operation_id": "wrong_book_api_wrong_book_get",
       "params": [
         {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
           "in": "query",
           "name": "only_unresolved",
           "required": false,
@@ -179,6 +273,12 @@
     "PATCH /api/tasks/{tid}/status": {
       "operation_id": "set_task_status_api_tasks__tid__status_patch",
       "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
         {
           "in": "path",
           "name": "tid",
@@ -201,6 +301,12 @@
       "operation_id": "update_wrong_api_wrong_book__wid__patch",
       "params": [
         {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
           "in": "path",
           "name": "wid",
           "required": true,
@@ -220,7 +326,14 @@
     },
     "POST /api/ai/ask": {
       "operation_id": "ai_ask_api_ai_ask_post",
-      "params": [],
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
       "request_body": {
         "content": [
           "json:object"
@@ -234,7 +347,14 @@
     },
     "POST /api/ai/summarize": {
       "operation_id": "ai_summarize_api_ai_summarize_post",
-      "params": [],
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
       "request_body": {
         "content": [
           "json:object"
@@ -248,14 +368,65 @@
     },
     "POST /api/ai/test": {
       "operation_id": "ai_test_api_ai_test_post",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "POST /api/ai/weak-analysis": {
+      "operation_id": "ai_weak_analysis_api_ai_weak_analysis_post",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "POST /api/auth/login": {
+      "operation_id": "login_api_auth_login_post",
+      "params": [],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "POST /api/auth/logout": {
+      "operation_id": "logout_api_auth_logout_post",
       "params": [],
       "request_body": null,
       "responses": [
         "200"
       ]
     },
-    "POST /api/ai/weak-analysis": {
-      "operation_id": "ai_weak_analysis_api_ai_weak_analysis_post",
+    "POST /api/auth/register": {
+      "operation_id": "register_api_auth_register_post",
       "params": [],
       "request_body": {
         "content": [
@@ -270,7 +441,14 @@
     },
     "POST /api/config/ai": {
       "operation_id": "set_ai_config_api_config_ai_post",
-      "params": [],
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
       "request_body": {
         "content": [
           "json:object"
@@ -284,7 +462,14 @@
     },
     "POST /api/knowledge-points": {
       "operation_id": "create_kp_api_knowledge_points_post",
-      "params": [],
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
       "request_body": {
         "content": [
           "json:object"
@@ -298,7 +483,14 @@
     },
     "POST /api/materials/upload": {
       "operation_id": "upload_material_api_materials_upload_post",
-      "params": [],
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
       "request_body": {
         "content": [
           "form:[]:required=[]"
@@ -312,7 +504,14 @@
     },
     "POST /api/practice/submit": {
       "operation_id": "submit_practice_api_practice_submit_post",
-      "params": [],
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
       "request_body": {
         "content": [
           "json:object"
@@ -326,7 +525,14 @@
     },
     "POST /api/questions/generate": {
       "operation_id": "generate_questions_api_questions_generate_post",
-      "params": [],
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
       "request_body": {
         "content": [
           "json:object"
@@ -340,7 +546,14 @@
     },
     "POST /api/tasks": {
       "operation_id": "create_task_api_tasks_post",
-      "params": [],
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
       "request_body": {
         "content": [
           "json:object"
@@ -355,6 +568,12 @@
     "PUT /api/knowledge-points/{kid}": {
       "operation_id": "update_kp_api_knowledge_points__kid__put",
       "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
         {
           "in": "path",
           "name": "kid",
@@ -449,11 +668,11 @@
         "status": 400
       },
       "list": {
-        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"id\": \"integer\", \"material_id\": \"integer\", \"material_title\": \"string\", \"question_count\": \"integer\", \"title\": \"string\"}>",
+        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"id\": \"integer\", \"material_id\": \"integer\", \"material_title\": \"string\", \"question_count\": \"integer\", \"title\": \"string\", \"user_id\": \"integer\"}>",
         "status": 200
       },
       "list_filtered": {
-        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"id\": \"integer\", \"material_id\": \"integer\", \"material_title\": \"string\", \"question_count\": \"integer\", \"title\": \"string\"}>",
+        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"id\": \"integer\", \"material_id\": \"integer\", \"material_title\": \"string\", \"question_count\": \"integer\", \"title\": \"string\", \"user_id\": \"integer\"}>",
         "status": 200
       },
       "update": {
@@ -478,7 +697,8 @@
           "filename": "string",
           "filetype": "string",
           "id": "integer",
-          "title": "string"
+          "title": "string",
+          "user_id": "integer"
         },
         "status": 200
       },
@@ -511,11 +731,11 @@
         "status": 404
       },
       "list": {
-        "body": "list<{\"answer\": \"string\", \"created_at\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"question\": \"string\", \"source\": \"string\", \"type\": \"string\"}>",
+        "body": "list<{\"answer\": \"string\", \"created_at\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"question\": \"string\", \"source\": \"string\", \"type\": \"string\", \"user_id\": \"integer\"}>",
         "status": 200
       },
       "list_by_kp": {
-        "body": "list<{\"answer\": \"string\", \"created_at\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"question\": \"string\", \"source\": \"string\", \"type\": \"string\"}>",
+        "body": "list<{\"answer\": \"string\", \"created_at\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"question\": \"string\", \"source\": \"string\", \"type\": \"string\", \"user_id\": \"integer\"}>",
         "status": 200
       },
       "submit": {
@@ -562,7 +782,7 @@
       },
       "due_soon_wide_has_item": false,
       "list": {
-        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"due_date\": \"string\", \"id\": \"integer\", \"kp_id\": \"null\", \"kp_title\": \"null\", \"overdue\": \"integer\", \"status\": \"string\", \"title\": \"string\"}>",
+        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"due_date\": \"string\", \"id\": \"integer\", \"kp_id\": \"null\", \"kp_title\": \"null\", \"overdue\": \"integer\", \"status\": \"string\", \"title\": \"string\", \"user_id\": \"integer\"}>",
         "status": 200
       },
       "patch_status": {
@@ -587,11 +807,11 @@
     },
     "GET /api/wrong-book": {
       "list": {
-        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"wrong_count\": \"integer\"}>",
+        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"user_id\": \"integer\", \"wrong_count\": \"integer\"}>",
         "status": 200
       },
       "list_all": {
-        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"wrong_count\": \"integer\"}>",
+        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"user_id\": \"integer\", \"wrong_count\": \"integer\"}>",
         "status": 200
       },
       "list_has_item": true,

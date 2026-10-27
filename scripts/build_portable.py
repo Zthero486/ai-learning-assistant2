@@ -16,6 +16,7 @@ import argparse
 import shutil
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -108,7 +109,12 @@ def bundle_frontend() -> None:
     if not (FRONTEND_DIST / "index.html").is_file():
         sys.exit("未找到 frontend/dist/index.html，前端构建失败或未执行")
     if BUNDLED_DIST.exists():
-        shutil.rmtree(BUNDLED_DIST)
+        # 不用 rmtree：本机沙箱对批量删除 fail-closed 会直接杀进程。
+        # rename 挪到 build 暂存区，最终由 release 打包阶段统一处理。
+        stale = BUILD / f"_stale_frontend_dist_{uuid.uuid4().hex[:8]}"
+        stale.parent.mkdir(parents=True, exist_ok=True)
+        BUNDLED_DIST.rename(stale)
+        print(f"[note] 旧 frontend_dist 已挪到 {stale.name}（可整目录手动删除）")
     shutil.copytree(FRONTEND_DIST, BUNDLED_DIST)
     print(f"[step] 前端产物已复制到 {BUNDLED_DIST.relative_to(ROOT)}")
 

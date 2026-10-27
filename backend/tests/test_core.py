@@ -113,7 +113,10 @@ def client(tmp_path, monkeypatch):
     app_main.init_db()
     from fastapi.testclient import TestClient
 
+    from tests.conftest import attach_auth
+
     with TestClient(app_main.app) as c:
+        attach_auth(c)  # 注册随机用户并挂令牌，接口现在都要登录
         yield c
 
     # 清理：配置接口会直接改进程环境变量，避免污染其他用例

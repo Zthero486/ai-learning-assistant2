@@ -1,10 +1,39 @@
-// v1 朴素 API 封装：fetch + JSON + 统一错误提示
+// v1.1 API 封装：fetch + JSON + Bearer 令牌 + 统一错误提示
+const TOKEN_KEY = 'lp_token'
+const USER_KEY = 'lp_user'
+
+export const auth = {
+  token: () => localStorage.getItem(TOKEN_KEY) || '',
+  username: () => {
+    try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null')?.username || '' } catch { return '' }
+  },
+  user: () => {
+    try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null') } catch { return null }
+  },
+  save: (token, user) => {
+    localStorage.setItem(TOKEN_KEY, token)
+    localStorage.setItem(USER_KEY, JSON.stringify(user))
+  },
+  clear: () => {
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(USER_KEY)
+  },
+}
+
 async function request(url, options = {}) {
-  const resp = await fetch(url, {
-    headers: options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' },
-    ...options,
-  })
+  const headers = { ...(options.headers || {}) }
+  if (!(options.body instanceof FormData)) headers['Content-Type'] = 'application/json'
+  const token = auth.token()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const resp = await fetch(url, { ...options, headers })
   if (!resp.ok) {
+    // 令牌失效/缺失：清掉本地登录态，回登录页
+    if (resp.status === 401 && !url.startsWith('/api/auth/')) {
+      auth.clear()
+      window.location.assign('/login')
+      throw new Error('登录已过期，请重新登录')
+    }
     let detail = `请求失败 (${resp.status})`
     try {
       const data = await resp.json()
@@ -16,6 +45,10 @@ async function request(url, options = {}) {
 }
 
 export default {
+  // 认证
+  register: (body) => request('/api/auth/register', { method: 'POST', body: JSON.stringify(body) }),
+  login: (body) => request('/api/auth/login', { method: 'POST', body: JSON.stringify(body) }),
+  me: () => request('/api/auth/me'),
   // 资料
   listMaterials: (course) => request(`/api/materials${course ? `?course=${encodeURIComponent(course)}` : ''}`),
   getMaterial: (id) => request(`/api/materials/${id}`),
