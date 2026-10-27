@@ -21,8 +21,6 @@
               登 录
             </el-button>
           </el-form>
-          <el-alert class="hint" type="info" :closable="false"
-            title="旧版本的数据都在演示账号里" description="用户名 demo　密码 demo123　登录后即可看到" />
         </el-tab-pane>
 
         <el-tab-pane label="注册" name="register">
