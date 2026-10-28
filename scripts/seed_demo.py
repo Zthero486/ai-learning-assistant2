@@ -66,13 +66,22 @@ KNOWLEDGE_POINTS = [
 
 QUESTIONS = {
     "监督学习与无监督学习": [
-        ("监督学习的训练数据具有什么特点？", "依赖带标注的训练数据，用输入与标签的对应关系学习映射。"),
+        (
+            "监督学习的训练数据具有什么特点？",
+            "依赖带标注的训练数据，用输入与标签的对应关系学习映射。",
+        ),
         ("无监督学习常见的两类任务是？", "聚类与降维。"),
         ("垃圾邮件识别属于哪类学习任务？", "监督学习中的分类任务。"),
     ],
     "强化学习": [
-        ("强化学习中智能体依据什么信号学习？", "依据环境返回的奖励信号不断试错学习最优策略。"),
-        ("强化学习与监督学习的关键区别是什么？", "强化学习不依赖标注样本，而是通过与环境交互获得奖励反馈。"),
+        (
+            "强化学习中智能体依据什么信号学习？",
+            "依据环境返回的奖励信号不断试错学习最优策略。",
+        ),
+        (
+            "强化学习与监督学习的关键区别是什么？",
+            "强化学习不依赖标注样本，而是通过与环境交互获得奖励反馈。",
+        ),
     ],
     "模型评估与过拟合": [
         ("什么是过拟合？", "模型在训练集表现好、在测试集表现差，泛化能力不足。"),
@@ -91,14 +100,29 @@ QUESTIONS = {
         ("列举三种常见代码坏味道。", "重复代码、过长函数、上帝类、硬编码配置等。"),
     ],
     "策略模式": [
-        ("策略模式解决什么问题？", "把一组可互换的算法封装起来，使算法独立于使用者变化。"),
+        (
+            "策略模式解决什么问题？",
+            "把一组可互换的算法封装起来，使算法独立于使用者变化。",
+        ),
         ("策略模式属于哪一类设计模式？", "行为型模式。"),
     ],
 }
 
 TASKS = [
-    ("人工智能导论", "复习监督学习与无监督学习", "回顾两类范式区别，重做错题", 1, "done"),
-    ("人工智能导论", "完成强化学习专项练习", "针对奖励机制整理笔记并完成 5 道练习", 2, "doing"),
+    (
+        "人工智能导论",
+        "复习监督学习与无监督学习",
+        "回顾两类范式区别，重做错题",
+        1,
+        "done",
+    ),
+    (
+        "人工智能导论",
+        "完成强化学习专项练习",
+        "针对奖励机制整理笔记并完成 5 道练习",
+        2,
+        "doing",
+    ),
     ("人工智能导论", "整理卷积神经网络笔记", "重点掌握卷积核与感受野", 2, "todo"),
     ("软件工程", "阅读设计模式相关资料", "重点关注策略模式与工厂模式", 3, "todo"),
     ("软件工程", "完成重构前后结构对比文档", "含 UML 类图与量化指标", 7, "todo"),
@@ -120,26 +144,53 @@ def now_iso() -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="写入演示数据")
     parser.add_argument("--force", action="store_true", help="清空现有业务数据后重建")
+    parser.add_argument(
+        "--user",
+        default="demo",
+        help="演示数据归属的用户名（默认 demo，需先在软件里注册）",
+    )
     args = parser.parse_args()
 
     conn = connect()
-    existing = conn.execute("SELECT COUNT(*) AS n FROM knowledge_points").fetchone()["n"]
+    user = conn.execute(
+        "SELECT id, username FROM users WHERE username=?", (args.user,)
+    ).fetchone()
+    if not user:
+        conn.close()
+        sys.exit(
+            f"用户 {args.user!r} 不存在，请先在软件里注册该账号，或用 --user 指定已有用户。"
+        )
+    uid = user["id"]
+    print(f"演示数据将归属用户：{user['username']} (id={uid})")
+
+    existing = conn.execute(
+        "SELECT COUNT(*) AS n FROM knowledge_points WHERE user_id=?", (uid,)
+    ).fetchone()["n"]
     if existing and not args.force:
         conn.close()
-        sys.exit(f"数据库中已有 {existing} 个知识点，未做任何修改。加 --force 可清空重建演示数据。")
+        sys.exit(
+            f"用户 {user['username']} 名下已有 {existing} 个知识点，未做任何修改。加 --force 可清空该用户数据后重建。"
+        )
 
     if args.force:
-        for table in ("wrong_book", "practice_records", "questions", "tasks", "knowledge_points", "materials"):
-            conn.execute(f"DELETE FROM {table}")
+        for table in (
+            "wrong_book",
+            "practice_records",
+            "questions",
+            "tasks",
+            "knowledge_points",
+            "materials",
+        ):
+            conn.execute(f"DELETE FROM {table} WHERE user_id=?", (uid,))
         conn.commit()
-        print("已清空原有业务数据")
+        print(f"已清空用户 {user['username']} 的原有业务数据")
 
     # 1. 课程资料
     material_ids = []
     for title, course, content in MATERIALS:
         cur = conn.execute(
-            "INSERT INTO materials(title,course,filename,filetype,content,created_at) VALUES(?,?,?,?,?,?)",
-            (title, course, f"demo_{title}.md", "markdown", content, now_iso()),
+            "INSERT INTO materials(user_id,title,course,filename,filetype,content,created_at) VALUES(?,?,?,?,?,?,?)",
+            (uid, title, course, f"demo_{title}.md", "markdown", content, now_iso()),
         )
         material_ids.append(cur.lastrowid)
     print(f"写入资料 {len(material_ids)} 份")
@@ -148,15 +199,15 @@ def main() -> None:
     total_questions = total_attempts = total_wrong = 0
     for course, title, desc, mat_idx, (correct_n, wrong_n) in KNOWLEDGE_POINTS:
         kid = conn.execute(
-            "INSERT INTO knowledge_points(material_id,course,title,description,created_at) VALUES(?,?,?,?,?)",
-            (material_ids[mat_idx], course, title, desc, now_iso()),
+            "INSERT INTO knowledge_points(user_id,material_id,course,title,description,created_at) VALUES(?,?,?,?,?,?)",
+            (uid, material_ids[mat_idx], course, title, desc, now_iso()),
         ).lastrowid
 
         qids = []
         for question, answer in QUESTIONS[title]:
             qid = conn.execute(
-                "INSERT INTO questions(kp_id,type,question,answer,source,created_at) VALUES(?,?,?,?,?,?)",
-                (kid, "short_answer", question, answer, "demo", now_iso()),
+                "INSERT INTO questions(user_id,kp_id,type,question,answer,source,created_at) VALUES(?,?,?,?,?,?,?)",
+                (uid, kid, "short_answer", question, answer, "demo", now_iso()),
             ).lastrowid
             qids.append(qid)
         total_questions += len(qids)
@@ -166,34 +217,44 @@ def main() -> None:
         for i, is_correct in enumerate(plan):
             qid = qids[i % len(qids)]
             conn.execute(
-                "INSERT INTO practice_records(question_id,user_answer,correct,created_at) VALUES(?,?,?,?)",
-                (qid, "演示数据答案" if is_correct else "演示数据（答错）", is_correct, now_iso()),
+                "INSERT INTO practice_records(user_id,question_id,user_answer,correct,created_at) VALUES(?,?,?,?,?)",
+                (
+                    uid,
+                    qid,
+                    "演示数据答案" if is_correct else "演示数据（答错）",
+                    is_correct,
+                    now_iso(),
+                ),
             )
             total_attempts += 1
             if not is_correct:
                 total_wrong += 1
                 conn.execute(
-                    """INSERT INTO wrong_book(question_id,wrong_count,resolved,review_marked,last_wrong_at)
-                       VALUES(?,1,0,?,?)
-                       ON CONFLICT(question_id) DO UPDATE SET wrong_count=wrong_count+1,
+                    """INSERT INTO wrong_book(user_id,question_id,wrong_count,resolved,review_marked,last_wrong_at)
+                       VALUES(?,?,1,0,?,?)
+                       ON CONFLICT(question_id, user_id) DO UPDATE SET wrong_count=wrong_count+1,
                        last_wrong_at=excluded.last_wrong_at""",
-                    (qid, 1 if total_wrong % 2 == 0 else 0, now_iso()),
+                    (uid, qid, 1 if total_wrong % 2 == 0 else 0, now_iso()),
                 )
     conn.commit()
-    print(f"写入知识点 {len(KNOWLEDGE_POINTS)} 个、题目 {total_questions} 道、练习记录 {total_attempts} 条、错题 {total_wrong} 条")
+    print(
+        f"写入知识点 {len(KNOWLEDGE_POINTS)} 个、题目 {total_questions} 道、练习记录 {total_attempts} 条、错题 {total_wrong} 条"
+    )
 
     # 3. 学习任务（含近 3 天到期任务，用于看板提醒）
     for course, title, desc, due_in_days, status in TASKS:
         due = (date.today() + timedelta(days=due_in_days)).isoformat()
         conn.execute(
-            "INSERT INTO tasks(course,kp_id,title,description,due_date,status,created_at) VALUES(?,?,?,?,?,?,?)",
-            (course, None, title, desc, due, status, now_iso()),
+            "INSERT INTO tasks(user_id,course,kp_id,title,description,due_date,status,created_at) VALUES(?,?,?,?,?,?,?,?)",
+            (uid, course, None, title, desc, due, status, now_iso()),
         )
     conn.commit()
     print(f"写入学习任务 {len(TASKS)} 个")
 
     conn.close()
-    print("\n演示数据就绪，打开 http://localhost:5173 查看效果。")
+    print(
+        f"\n演示数据就绪，打开 http://127.0.0.1:8000 并登录账号 {user['username']} 查看效果。"
+    )
 
 
 if __name__ == "__main__":
