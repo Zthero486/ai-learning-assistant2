@@ -26,18 +26,28 @@
 
 <script setup>
 // v1.2：侧栏底部加搜索入口、当前用户与退出
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Odometer, FolderOpened, Collection, List, EditPen, WarningFilled, ChatDotRound } from '@element-plus/icons-vue'
 import { auth } from './api'
 import GlobalSearch from './components/GlobalSearch.vue'
 
 const router = useRouter()
+const route = useRoute()
 const gs = ref(null)
-const username = computed(() => auth.username() || '未登录')
+
+// localStorage 不是响应式数据源，computed 读它永远不更新；
+// 这里改为随路由跳转刷新（登录/注册/退出都会触发路由变化）
+const username = ref(auth.username() || '未登录')
+watch(
+  () => route.fullPath,
+  () => { username.value = auth.username() || '未登录' },
+  { immediate: true },
+)
 
 function logout() {
   auth.clear()
+  username.value = '未登录'
   router.push('/login')
 }
 </script>
