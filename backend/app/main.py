@@ -22,7 +22,8 @@ from pathlib import Path
 from urllib.parse import quote
 
 import httpx
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException,
+                     UploadFile)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -148,7 +149,14 @@ def init_db() -> None:
     conn.close()
 
 
-USER_TABLES = ("materials", "knowledge_points", "tasks", "questions", "practice_records", "wrong_book")
+USER_TABLES = (
+    "materials",
+    "knowledge_points",
+    "tasks",
+    "questions",
+    "practice_records",
+    "wrong_book",
+)
 
 
 def migrate_legacy(conn: sqlite3.Connection) -> None:
@@ -158,7 +166,8 @@ def migrate_legacy(conn: sqlite3.Connection) -> None:
     迁移前自动备份一份 app.db.bak-pre-auth，防止 ALTER 中途断电。
     """
     tables = {
-        r[0] for r in conn.execute(
+        r[0]
+        for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         )
     }
@@ -251,7 +260,11 @@ def require_user(authorization: str = Header(default="")) -> int:
 
 
 def _public_user(row) -> dict:
-    return {"id": row["id"], "username": row["username"], "display_name": row["display_name"]}
+    return {
+        "id": row["id"],
+        "username": row["username"],
+        "display_name": row["display_name"],
+    }
 
 
 @app.post("/api/auth/register")
@@ -268,7 +281,9 @@ def register(body: dict):
         raise HTTPException(400, "密码至少 6 位")
 
     conn = db()
-    exists = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+    exists = conn.execute(
+        "SELECT id FROM users WHERE username=?", (username,)
+    ).fetchone()
     if exists:
         conn.close()
         raise HTTPException(409, "用户名已被注册")
@@ -281,7 +296,10 @@ def register(body: dict):
     conn.commit()
     uid = cur.lastrowid
     conn.close()
-    return {"token": auth.make_token(uid), "user": {"id": uid, "username": username, "display_name": display_name}}
+    return {
+        "token": auth.make_token(uid),
+        "user": {"id": uid, "username": username, "display_name": display_name},
+    }
 
 
 @app.post("/api/auth/login")
@@ -430,7 +448,12 @@ async def upload_material(
     conn.commit()
     mid = cur.lastrowid
     conn.close()
-    return {"id": mid, "title": Path(file.filename).stem, "course": course, "chars": len(content)}
+    return {
+        "id": mid,
+        "title": Path(file.filename).stem,
+        "course": course,
+        "chars": len(content),
+    }
 
 
 @app.get("/api/materials")
@@ -532,7 +555,8 @@ def update_kp(kid: int, body: dict, uid: int = Depends(require_user)):
         raise HTTPException(400, "没有可更新字段")
     params.extend([kid, uid])
     cur = conn.execute(
-        f"UPDATE knowledge_points SET {','.join(fields)} WHERE id=? AND user_id=?", params
+        f"UPDATE knowledge_points SET {','.join(fields)} WHERE id=? AND user_id=?",
+        params,
     )
     conn.commit()
     changed = cur.rowcount
@@ -545,7 +569,9 @@ def update_kp(kid: int, body: dict, uid: int = Depends(require_user)):
 @app.delete("/api/knowledge-points/{kid}")
 def delete_kp(kid: int, uid: int = Depends(require_user)):
     conn = db()
-    cur = conn.execute("DELETE FROM knowledge_points WHERE id=? AND user_id=?", (kid, uid))
+    cur = conn.execute(
+        "DELETE FROM knowledge_points WHERE id=? AND user_id=?", (kid, uid)
+    )
     conn.commit()
     changed = cur.rowcount
     conn.close()
@@ -646,7 +672,8 @@ def generate_questions(body: dict, uid: int = Depends(require_user)):
     content = ""
     if kp["material_id"]:
         row = conn.execute(
-            "SELECT content FROM materials WHERE id=? AND user_id=?", (kp["material_id"], uid)
+            "SELECT content FROM materials WHERE id=? AND user_id=?",
+            (kp["material_id"], uid),
         ).fetchone()
         content = row["content"] if row else ""
     conn.close()
@@ -668,7 +695,9 @@ def generate_questions(body: dict, uid: int = Depends(require_user)):
         source = "fallback"
 
     if not questions:
-        questions = ai_helper.fallback_questions(kp["title"], content or kp["title"], num)
+        questions = ai_helper.fallback_questions(
+            kp["title"], content or kp["title"], num
+        )
         source = "fallback"
 
     conn = db()
@@ -812,7 +841,9 @@ def export_wrong_csv(
 
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["知识点", "题目", "参考答案", "错误次数", "最近错误时间", "状态", "待重点复习"])
+    writer.writerow(
+        ["知识点", "题目", "参考答案", "错误次数", "最近错误时间", "状态", "待重点复习"]
+    )
     for r in rows:
         writer.writerow(
             [
@@ -831,7 +862,9 @@ def export_wrong_csv(
     return Response(
         content=content,
         media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"
+        },
     )
 
 
@@ -844,7 +877,11 @@ def print_wrong_book(
     """打印友好版错题本：浏览器里 Ctrl+P 即可「另存为 PDF」。"""
     uid = _uid_flexible(authorization, token)
     rows = _wrong_rows(uid, only_unresolved)
-    username = db().execute("SELECT username FROM users WHERE id=?", (uid,)).fetchone()["username"]
+    username = (
+        db()
+        .execute("SELECT username FROM users WHERE id=?", (uid,))
+        .fetchone()["username"]
+    )
 
     cards = []
     for i, r in enumerate(rows, 1):
@@ -899,17 +936,29 @@ def global_search(q: str, uid: int = Depends(require_user)):
             return text[:80]
         start = max(0, pos - 40)
         end = min(len(text), pos + len(q) + 60)
-        return ("…" if start else "") + text[start:end] + ("…" if end < len(text) else "")
+        return (
+            ("…" if start else "") + text[start:end] + ("…" if end < len(text) else "")
+        )
 
     materials = [
-        {"id": r["id"], "title": r["title"], "course": r["course"], "snippet": snip(r["content"])}
+        {
+            "id": r["id"],
+            "title": r["title"],
+            "course": r["course"],
+            "snippet": snip(r["content"]),
+        }
         for r in conn.execute(
             f"SELECT id,title,course,content FROM materials WHERE user_id=? AND (title LIKE ? OR content LIKE ?) ORDER BY id DESC LIMIT {limit}",
             (uid, like, like),
         ).fetchall()
     ]
     kps = [
-        {"id": r["id"], "title": r["title"], "course": r["course"], "snippet": snip(r["description"])}
+        {
+            "id": r["id"],
+            "title": r["title"],
+            "course": r["course"],
+            "snippet": snip(r["description"]),
+        }
         for r in conn.execute(
             f"SELECT id,title,course,description FROM knowledge_points WHERE user_id=? AND (title LIKE ? OR description LIKE ?) ORDER BY id DESC LIMIT {limit}",
             (uid, like, like),
@@ -925,21 +974,32 @@ def global_search(q: str, uid: int = Depends(require_user)):
         ).fetchall()
     ]
     tasks = [
-        {"id": r["id"], "title": r["title"], "status": r["status"], "snippet": snip(r["description"])}
+        {
+            "id": r["id"],
+            "title": r["title"],
+            "status": r["status"],
+            "snippet": snip(r["description"]),
+        }
         for r in conn.execute(
             f"SELECT id,title,description,status FROM tasks WHERE user_id=? AND (title LIKE ? OR description LIKE ?) ORDER BY id DESC LIMIT {limit}",
             (uid, like, like),
         ).fetchall()
     ]
     conn.close()
-    return {"materials": materials, "knowledge_points": kps, "questions": questions, "tasks": tasks}
+    return {
+        "materials": materials,
+        "knowledge_points": kps,
+        "questions": questions,
+        "tasks": tasks,
+    }
 
 
 # ==================== 统计 ====================
 @app.get("/api/stats/overview")
 def stats_overview(uid: int = Depends(require_user)):
     conn = db()
-    per_kp = conn.execute("""SELECT k.id, k.title, k.course,
+    per_kp = conn.execute(
+        """SELECT k.id, k.title, k.course,
            COUNT(DISTINCT q.id) AS question_count,
            COUNT(pr.id) AS attempts,
            SUM(pr.correct) AS correct_count
@@ -947,13 +1007,17 @@ def stats_overview(uid: int = Depends(require_user)):
            LEFT JOIN questions q ON q.kp_id=k.id
            LEFT JOIN practice_records pr ON pr.question_id=q.id
            WHERE k.user_id=?
-           GROUP BY k.id ORDER BY k.id""", (uid,)).fetchall()
-    totals = conn.execute("""SELECT (SELECT COUNT(*) FROM materials WHERE user_id=?) AS materials,
+           GROUP BY k.id ORDER BY k.id""",
+        (uid,),
+    ).fetchall()
+    totals = conn.execute(
+        """SELECT (SELECT COUNT(*) FROM materials WHERE user_id=?) AS materials,
            (SELECT COUNT(*) FROM knowledge_points WHERE user_id=?) AS kps,
            (SELECT COUNT(*) FROM tasks WHERE user_id=? AND status!='done') AS open_tasks,
            (SELECT COUNT(*) FROM practice_records WHERE user_id=?) AS attempts,
            (SELECT COUNT(*) FROM wrong_book WHERE user_id=? AND resolved=0) AS unresolved_wrong""",
-        (uid, uid, uid, uid, uid)).fetchone()
+        (uid, uid, uid, uid, uid),
+    ).fetchone()
     conn.close()
 
     result = []
@@ -1035,7 +1099,9 @@ def ai_summarize(body: dict, uid: int = Depends(require_user)):
             )
             return {"mode": "ai", "summary": text}
         except httpx.HTTPError as e:
-            return JSONResponse(status_code=502, content={"detail": f"AI 接口调用失败：{e}"})
+            return JSONResponse(
+                status_code=502, content={"detail": f"AI 接口调用失败：{e}"}
+            )
     return {"mode": "fallback", "summary": ai_helper.fallback_summary(row["content"])}
 
 
@@ -1058,7 +1124,9 @@ def ai_ask(body: dict, uid: int = Depends(require_user)):
         chunks = ai_helper.chunk_text("\n".join(r["content"] for r in rows), CHUNK_SIZE)
 
     if ai_helper.is_available():
-        context = build_context(ai_helper.search_chunks(question, chunks, top_k=5) or chunks)
+        context = build_context(
+            ai_helper.search_chunks(question, chunks, top_k=5) or chunks
+        )
         try:
             text = ai_helper.call_llm(
                 "你是学习助手。仅依据下面提供的课程资料片段回答问题；"
@@ -1068,7 +1136,9 @@ def ai_ask(body: dict, uid: int = Depends(require_user)):
             )
             return {"mode": "ai", "answer": text}
         except httpx.HTTPError as e:
-            return JSONResponse(status_code=502, content={"detail": f"AI 接口调用失败：{e}"})
+            return JSONResponse(
+                status_code=502, content={"detail": f"AI 接口调用失败：{e}"}
+            )
     return {"mode": "fallback", "answer": ai_helper.fallback_answer(question, chunks)}
 
 
@@ -1077,7 +1147,9 @@ def ai_weak_analysis(body: dict, uid: int = Depends(require_user)):
     course = body.get("course")
     overview = stats_overview(uid)
     weak_kps = [
-        k for k in overview["per_kp"] if k["weak"] and (not course or k["course"] == course)
+        k
+        for k in overview["per_kp"]
+        if k["weak"] and (not course or k["course"] == course)
     ]
     if not weak_kps:
         return {
@@ -1088,7 +1160,9 @@ def ai_weak_analysis(body: dict, uid: int = Depends(require_user)):
 
     weak_titles = "、".join(k["title"] for k in weak_kps)
     if ai_helper.is_available():
-        chunks = course_chunks(course or "未分类", uid) or course_chunks(weak_kps[0]["course"], uid)
+        chunks = course_chunks(course or "未分类", uid) or course_chunks(
+            weak_kps[0]["course"], uid
+        )
         try:
             text = ai_helper.call_llm(
                 "你是学习教练。学生以下知识点练习正确率低于 60%，请结合课程资料给出："
@@ -1097,7 +1171,9 @@ def ai_weak_analysis(body: dict, uid: int = Depends(require_user)):
             )
             return {"mode": "ai", "weak_kps": weak_kps, "advice": text}
         except httpx.HTTPError as e:
-            return JSONResponse(status_code=502, content={"detail": f"AI 接口调用失败：{e}"})
+            return JSONResponse(
+                status_code=502, content={"detail": f"AI 接口调用失败：{e}"}
+            )
 
     lines = [
         "【规则引擎分析（未配置 AI，模式：统计）】",
@@ -1129,18 +1205,32 @@ class _SPAStaticFiles(StaticFiles):
 
     找不到文件就回落 index.html，交给 vue-router 自己分发；
     /api/ 下未命中的路径保持 404，避免接口错误被一份 HTML 掩盖。
+
+    缓存策略：index.html 一律 no-cache（每次都拿最新，引用的资产文件名
+    带内容哈希，构建后旧文件被删除，缓存旧 index.html 会导致白屏）；
+    带哈希的 assets 允许浏览器长缓存（内容变则文件名变）。
     """
 
     async def get_response(self, path, scope):
+        raw = (scope.get("path") or path or "").lstrip("/")
+        is_index = raw == "" or raw == "index.html"
         try:
-            return await super().get_response(path, scope)
+            response = await super().get_response(path, scope)
         except StarletteHTTPException as exc:
-            raw = (scope.get("path") or path or "").lstrip("/")
             if exc.status_code == 404 and not raw.startswith("api/"):
-                return await super().get_response("index.html", scope)
-            raise
+                response = await super().get_response("index.html", scope)
+                is_index = True
+            else:
+                raise
+        if is_index:
+            response.headers["Cache-Control"] = "no-cache"
+        elif raw.startswith("assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
 
 
 _frontend = apppaths.frontend_dist()
 if _frontend is not None:
-    app.mount("/", _SPAStaticFiles(directory=str(_frontend), html=True), name="frontend")
+    app.mount(
+        "/", _SPAStaticFiles(directory=str(_frontend), html=True), name="frontend"
+    )
