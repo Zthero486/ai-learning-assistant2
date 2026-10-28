@@ -12,6 +12,7 @@
         <el-menu-item index="/ai"><el-icon><ChatDotRound /></el-icon>AI 助手</el-menu-item>
       </el-menu>
       <div class="user-box">
+        <div class="search-hint" @click="$refs.gs.open()">🔍 搜索 <span class="kbd">Ctrl+K</span></div>
         <div class="user-name">👤 {{ username }}</div>
         <el-button size="small" type="danger" plain @click="logout">退出登录</el-button>
       </div>
@@ -19,17 +20,20 @@
     <el-main class="main">
       <router-view />
     </el-main>
+    <GlobalSearch ref="gs" />
   </el-container>
 </template>
 
 <script setup>
-// v1.1：侧栏底部加当前用户与退出
-import { computed } from 'vue'
+// v1.2：侧栏底部加搜索入口、当前用户与退出
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Odometer, FolderOpened, Collection, List, EditPen, WarningFilled, ChatDotRound } from '@element-plus/icons-vue'
 import { auth } from './api'
+import GlobalSearch from './components/GlobalSearch.vue'
 
 const router = useRouter()
+const gs = ref(null)
 const username = computed(() => auth.username() || '未登录')
 
 function logout() {
@@ -45,6 +49,9 @@ body { margin: 0; background: #f5f7fa; }
 .aside .el-menu { flex: 1; }
 .logo { font-weight: 700; font-size: 16px; padding: 18px 16px; color: #409eff; }
 .user-box { padding: 12px 16px; border-top: 1px solid #e4e7ed; }
+.search-hint { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: #606266; cursor: pointer; padding: 6px 8px; margin: 0 -8px 6px; border-radius: 6px; }
+.search-hint:hover { background: #f0f6ff; }
+.kbd { font-size: 11px; color: #909399; border: 1px solid #dcdfe6; border-radius: 4px; padding: 1px 5px; }
 .user-name { font-size: 13px; color: #606266; margin-bottom: 8px; }
 .main { overflow: auto; }
 .page-card { margin-bottom: 16px; }

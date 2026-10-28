@@ -55,7 +55,7 @@ SNAPSHOT_VERSION = 1
 # 静态资源托管（frontend/dist）存在时会多挂一个 "/" 路由，与契约无关
 STATIC_PATHS = {"/"}
 
-# ==================== 接口清单（30 个接口，手工登记） ====================
+# ==================== 接口清单（33 个接口，手工登记） ====================
 # "METHOD /path"：与 main.py 中 @app.xxx 装饰器一一对应，改接口必须同步改这里。
 CONTRACT_MANIFEST = {
     "GET /api/health",
@@ -81,6 +81,9 @@ CONTRACT_MANIFEST = {
     "POST /api/practice/submit",
     "GET /api/wrong-book",
     "PATCH /api/wrong-book/{wid}",
+    "GET /api/wrong-book/export/csv",
+    "GET /api/wrong-book/print",
+    "GET /api/search",
     "GET /api/stats/overview",
     "GET /api/config/ai",
     "POST /api/config/ai",
@@ -499,7 +502,7 @@ def test_接口清单与实测一致():
         f"  清单里有、代码里没有：{sorted(CONTRACT_MANIFEST - actual)}\n"
         "新增/删除接口时，请同步更新 CONTRACT_MANIFEST 并刷新快照。"
     )
-    assert len(CONTRACT_MANIFEST) == 30, f"接口数量应为 30，当前 {len(CONTRACT_MANIFEST)}"
+    assert len(CONTRACT_MANIFEST) == 33, f"接口数量应为 33，当前 {len(CONTRACT_MANIFEST)}"
 
 
 def test_openapi_与路由表一致():
