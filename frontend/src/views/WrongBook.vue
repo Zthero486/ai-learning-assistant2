@@ -3,7 +3,11 @@
     <template #header>
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span>错题本</span>
-        <el-checkbox v-model="onlyUnresolved" label="只看未解决" @change="load" />
+        <div style="display:flex;align-items:center;gap:12px">
+          <el-checkbox v-model="onlyUnresolved" label="只看未解决" @change="load" />
+          <el-button size="small" @click="doExportCsv" :loading="exporting">导出 CSV</el-button>
+          <el-button size="small" @click="doPrint">导出 PDF</el-button>
+        </div>
       </div>
     </template>
     <el-empty v-if="!items.length" description="错题本是空的，继续保持！" />
@@ -31,6 +35,7 @@ import api from '../api'
 
 const items = ref([])
 const onlyUnresolved = ref(true)
+const exporting = ref(false)
 
 async function load() {
   try {
@@ -38,6 +43,24 @@ async function load() {
   } catch (e) {
     ElMessage.error(e.message)
   }
+}
+
+// 导出永远导全部错题（含已掌握），导未掌握的容易漏
+async function doExportCsv() {
+  exporting.value = true
+  try {
+    await api.exportWrongCsv(false)
+    ElMessage.success('CSV 已下载')
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    exporting.value = false
+  }
+}
+
+function doPrint() {
+  api.openWrongPrint(false)
+  ElMessage.info('已在新标签页打开，按 Ctrl+P 选择「另存为 PDF」')
 }
 
 async function markReview(w) {

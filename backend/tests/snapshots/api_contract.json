@@ -194,6 +194,28 @@
         "422"
       ]
     },
+    "GET /api/search": {
+      "operation_id": "global_search_api_search_get",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "query",
+          "name": "q",
+          "required": true,
+          "schema": "string"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
     "GET /api/stats/overview": {
       "operation_id": "stats_overview_api_stats_overview_get",
       "params": [
@@ -262,6 +284,62 @@
           "name": "only_unresolved",
           "required": false,
           "schema": "boolean"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "GET /api/wrong-book/export/csv": {
+      "operation_id": "export_wrong_csv_api_wrong_book_export_csv_get",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "query",
+          "name": "only_unresolved",
+          "required": false,
+          "schema": "boolean"
+        },
+        {
+          "in": "query",
+          "name": "token",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "GET /api/wrong-book/print": {
+      "operation_id": "print_wrong_book_api_wrong_book_print_get",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "query",
+          "name": "only_unresolved",
+          "required": false,
+          "schema": "boolean"
+        },
+        {
+          "in": "query",
+          "name": "token",
+          "required": false,
+          "schema": "string"
         }
       ],
       "request_body": null,

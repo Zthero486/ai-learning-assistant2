@@ -10,17 +10,21 @@ v2 重构方向（详见 docs/design.md）：分层架构 + 仓储模式 + 策�
 + Pydantic Settings 配置中心 + 向量检索 + SSE 流式输出。
 """
 
+import csv
+import html
+import io
 import json
 import shutil
 import sqlite3
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote
 
 import httpx
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pypdf import PdfReader
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -764,6 +768,171 @@ def update_wrong(wid: int, body: dict, uid: int = Depends(require_user)):
     if not changed:
         raise HTTPException(404, "错题记录不存在")
     return {"updated": wid}
+
+
+def _uid_flexible(authorization: str, token_query: str = "") -> int:
+    """下载/打印类路由的鉴权：优先 Bearer 头，兼容 ?token= 查询参数
+    （浏览器 <a> 下载没法带 Authorization 头）。"""
+    token = ""
+    if authorization.startswith("Bearer "):
+        token = authorization[7:]
+    elif token_query:
+        token = token_query
+    if not token:
+        raise HTTPException(401, "未登录")
+    uid = auth.parse_token(token)
+    if uid is None:
+        raise HTTPException(401, "登录已过期，请重新登录")
+    return uid
+
+
+def _wrong_rows(uid: int, only_unresolved: bool) -> list:
+    conn = db()
+    sql = """SELECT w.wrong_count, w.resolved, w.review_marked, w.last_wrong_at,
+             q.question, q.answer, k.title AS kp_title
+             FROM wrong_book w JOIN questions q ON q.id=w.question_id
+             LEFT JOIN knowledge_points k ON k.id=q.kp_id
+             WHERE w.user_id=?"""
+    if only_unresolved:
+        sql += " AND w.resolved=0"
+    sql += " ORDER BY w.last_wrong_at DESC"
+    rows = conn.execute(sql, (uid,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/wrong-book/export/csv")
+def export_wrong_csv(
+    only_unresolved: bool = False,
+    token: str = "",
+    authorization: str = Header(default=""),
+):
+    uid = _uid_flexible(authorization, token)
+    rows = _wrong_rows(uid, only_unresolved)
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["知识点", "题目", "参考答案", "错误次数", "最近错误时间", "状态", "待重点复习"])
+    for r in rows:
+        writer.writerow(
+            [
+                r["kp_title"] or "未关联",
+                r["question"],
+                r["answer"],
+                r["wrong_count"],
+                r["last_wrong_at"],
+                "已掌握" if r["resolved"] else "未解决",
+                "是" if r["review_marked"] else "",
+            ]
+        )
+    # utf-8-sig：Excel 双击打开不乱码
+    content = buf.getvalue().encode("utf-8-sig")
+    filename = f"错题本-{datetime.now():%Y%m%d}.csv"
+    return Response(
+        content=content,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
+
+
+@app.get("/api/wrong-book/print")
+def print_wrong_book(
+    only_unresolved: bool = False,
+    token: str = "",
+    authorization: str = Header(default=""),
+):
+    """打印友好版错题本：浏览器里 Ctrl+P 即可「另存为 PDF」。"""
+    uid = _uid_flexible(authorization, token)
+    rows = _wrong_rows(uid, only_unresolved)
+    username = db().execute("SELECT username FROM users WHERE id=?", (uid,)).fetchone()["username"]
+
+    cards = []
+    for i, r in enumerate(rows, 1):
+        marked = '<span class="mark">★ 重点</span>' if r["review_marked"] else ""
+        cards.append(
+            f'<div class="card"><div class="q">{i}. {html.escape(r["question"])} {marked}'
+            f'<span class="meta">{html.escape(r["kp_title"] or "未关联")} · 错 {r["wrong_count"]} 次</span></div>'
+            f'<div class="a">答：{html.escape(r["answer"])}</div></div>'
+        )
+    body = "\n".join(cards) or '<p class="empty">错题本是空的</p>'
+    title = "错题（未掌握）" if only_unresolved else "错题本（全部）"
+    html_doc = f"""<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>{title} · AI 学习助手</title>
+<style>
+body {{ font: 14px/1.7 "Microsoft YaHei", sans-serif; max-width: 800px; margin: 24px auto; color: #222; }}
+h1 {{ font-size: 20px; }} .sub {{ color: #888; font-size: 12px; margin-bottom: 18px; }}
+.card {{ border-bottom: 1px solid #ddd; padding: 10px 0; page-break-inside: avoid; }}
+.q {{ font-weight: 600; }} .a {{ color: #2a6e2a; margin-top: 4px; }}
+.meta {{ font-weight: 400; color: #888; font-size: 12px; margin-left: 8px; }}
+.mark {{ color: #c60; font-weight: 400; font-size: 12px; }}
+.empty {{ color: #888; }}
+@media print {{ .noprint {{ display: none; }} }}
+</style></head><body>
+<h1>{title}</h1>
+<div class="sub">{username} · 共 {len(rows)} 题 · 导出时间 {datetime.now():%Y-%m-%d %H:%M}</div>
+{body}
+<p class="noprint" style="margin-top:24px;color:#888">
+  按 Ctrl+P 打印，目标打印机选「另存为 PDF」即可保存 PDF 文件。
+  <a href="javascript:window.print()">现在打印</a>
+</p>
+<script>window.addEventListener('load', () => setTimeout(() => window.print(), 300));</script>
+</body></html>"""
+    return HTMLResponse(content=html_doc)
+
+
+# ==================== 全局搜索 ====================
+@app.get("/api/search")
+def global_search(q: str, uid: int = Depends(require_user)):
+    """跨资料/知识点/题目/任务的全局搜索，结果按类型分组。"""
+    q = (q or "").strip()
+    if not q:
+        return {"materials": [], "knowledge_points": [], "questions": [], "tasks": []}
+    like = f"%{q}%"
+    conn = db()
+    limit = 10
+
+    def snip(text: str) -> str:
+        text = text or ""
+        pos = text.lower().find(q.lower())
+        if pos < 0:
+            return text[:80]
+        start = max(0, pos - 40)
+        end = min(len(text), pos + len(q) + 60)
+        return ("…" if start else "") + text[start:end] + ("…" if end < len(text) else "")
+
+    materials = [
+        {"id": r["id"], "title": r["title"], "course": r["course"], "snippet": snip(r["content"])}
+        for r in conn.execute(
+            f"SELECT id,title,course,content FROM materials WHERE user_id=? AND (title LIKE ? OR content LIKE ?) ORDER BY id DESC LIMIT {limit}",
+            (uid, like, like),
+        ).fetchall()
+    ]
+    kps = [
+        {"id": r["id"], "title": r["title"], "course": r["course"], "snippet": snip(r["description"])}
+        for r in conn.execute(
+            f"SELECT id,title,course,description FROM knowledge_points WHERE user_id=? AND (title LIKE ? OR description LIKE ?) ORDER BY id DESC LIMIT {limit}",
+            (uid, like, like),
+        ).fetchall()
+    ]
+    questions = [
+        {"id": r["id"], "kp_title": r["kp_title"], "snippet": snip(r["question"])}
+        for r in conn.execute(
+            f"""SELECT q.id, q.question, k.title AS kp_title FROM questions q
+                LEFT JOIN knowledge_points k ON k.id=q.kp_id
+                WHERE q.user_id=? AND (q.question LIKE ? OR q.answer LIKE ?) ORDER BY q.id DESC LIMIT {limit}""",
+            (uid, like, like),
+        ).fetchall()
+    ]
+    tasks = [
+        {"id": r["id"], "title": r["title"], "status": r["status"], "snippet": snip(r["description"])}
+        for r in conn.execute(
+            f"SELECT id,title,description,status FROM tasks WHERE user_id=? AND (title LIKE ? OR description LIKE ?) ORDER BY id DESC LIMIT {limit}",
+            (uid, like, like),
+        ).fetchall()
+    ]
+    conn.close()
+    return {"materials": materials, "knowledge_points": kps, "questions": questions, "tasks": tasks}
 
 
 # ==================== 统计 ====================

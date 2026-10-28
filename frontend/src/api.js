@@ -44,6 +44,24 @@ async function request(url, options = {}) {
   return resp.json()
 }
 
+// 带 Authorization 的文件下载（浏览器 <a> 下载带不了请求头，所以走 fetch+blob）
+async function downloadFile(url, filename) {
+  const resp = await fetch(url, { headers: { Authorization: `Bearer ${auth.token()}` } })
+  if (!resp.ok) {
+    let detail = `导出失败 (${resp.status})`
+    try { const d = await resp.json(); if (d.detail) detail = d.detail } catch { /* ignore */ }
+    throw new Error(detail)
+  }
+  const blob = await resp.blob()
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(a.href)
+}
+
 export default {
   // 认证
   register: (body) => request('/api/auth/register', { method: 'POST', body: JSON.stringify(body) }),
@@ -76,6 +94,12 @@ export default {
   submitPractice: (body) => request('/api/practice/submit', { method: 'POST', body: JSON.stringify(body) }),
   wrongBook: (onlyUnresolved = true) => request(`/api/wrong-book?only_unresolved=${onlyUnresolved}`),
   updateWrong: (id, body) => request(`/api/wrong-book/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  exportWrongCsv: (onlyUnresolved = false) =>
+    downloadFile(`/api/wrong-book/export/csv?only_unresolved=${onlyUnresolved}`, `错题本-${new Date().toISOString().slice(0, 10)}.csv`),
+  openWrongPrint: (onlyUnresolved = false) =>
+    window.open(`/api/wrong-book/print?token=${encodeURIComponent(auth.token())}&only_unresolved=${onlyUnresolved}`, '_blank'),
+  // 全局搜索
+  search: (q) => request(`/api/search?q=${encodeURIComponent(q)}`),
   // 统计
   statsOverview: () => request('/api/stats/overview'),
   // AI
