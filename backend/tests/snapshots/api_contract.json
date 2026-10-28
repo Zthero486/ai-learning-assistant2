@@ -232,6 +232,22 @@
         "422"
       ]
     },
+    "GET /api/sync/export": {
+      "operation_id": "sync_export_api_sync_export_get",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
     "GET /api/tasks": {
       "operation_id": "list_tasks_api_tasks_get",
       "params": [
@@ -622,6 +638,80 @@
         "422"
       ]
     },
+    "POST /api/sync/config": {
+      "operation_id": "sync_config_api_sync_config_post",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "POST /api/sync/import": {
+      "operation_id": "sync_import_api_sync_import_post",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "POST /api/sync/pull": {
+      "operation_id": "sync_pull_api_sync_pull_post",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "POST /api/sync/push": {
+      "operation_id": "sync_push_api_sync_push_post",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
     "POST /api/tasks": {
       "operation_id": "create_task_api_tasks_post",
       "params": [
@@ -746,11 +836,11 @@
         "status": 400
       },
       "list": {
-        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"id\": \"integer\", \"material_id\": \"integer\", \"material_title\": \"string\", \"question_count\": \"integer\", \"title\": \"string\", \"user_id\": \"integer\"}>",
+        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"id\": \"integer\", \"material_id\": \"integer\", \"material_title\": \"string\", \"question_count\": \"integer\", \"title\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\"}>",
         "status": 200
       },
       "list_filtered": {
-        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"id\": \"integer\", \"material_id\": \"integer\", \"material_title\": \"string\", \"question_count\": \"integer\", \"title\": \"string\", \"user_id\": \"integer\"}>",
+        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"id\": \"integer\", \"material_id\": \"integer\", \"material_title\": \"string\", \"question_count\": \"integer\", \"title\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\"}>",
         "status": 200
       },
       "update": {
@@ -776,7 +866,8 @@
           "filetype": "string",
           "id": "integer",
           "title": "string",
-          "user_id": "integer"
+          "user_id": "integer",
+          "uuid": "string"
         },
         "status": 200
       },
@@ -809,11 +900,11 @@
         "status": 404
       },
       "list": {
-        "body": "list<{\"answer\": \"string\", \"created_at\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"question\": \"string\", \"source\": \"string\", \"type\": \"string\", \"user_id\": \"integer\"}>",
+        "body": "list<{\"answer\": \"string\", \"created_at\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"question\": \"string\", \"source\": \"string\", \"type\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\"}>",
         "status": 200
       },
       "list_by_kp": {
-        "body": "list<{\"answer\": \"string\", \"created_at\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"question\": \"string\", \"source\": \"string\", \"type\": \"string\", \"user_id\": \"integer\"}>",
+        "body": "list<{\"answer\": \"string\", \"created_at\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"question\": \"string\", \"source\": \"string\", \"type\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\"}>",
         "status": 200
       },
       "submit": {
@@ -860,7 +951,7 @@
       },
       "due_soon_wide_has_item": false,
       "list": {
-        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"due_date\": \"string\", \"id\": \"integer\", \"kp_id\": \"null\", \"kp_title\": \"null\", \"overdue\": \"integer\", \"status\": \"string\", \"title\": \"string\", \"user_id\": \"integer\"}>",
+        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"due_date\": \"string\", \"id\": \"integer\", \"kp_id\": \"null\", \"kp_title\": \"null\", \"overdue\": \"integer\", \"status\": \"string\", \"title\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\"}>",
         "status": 200
       },
       "patch_status": {
@@ -885,11 +976,11 @@
     },
     "GET /api/wrong-book": {
       "list": {
-        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"user_id\": \"integer\", \"wrong_count\": \"integer\"}>",
+        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"user_id\": \"integer\", \"uuid\": \"string\", \"wrong_count\": \"integer\"}>",
         "status": 200
       },
       "list_all": {
-        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"user_id\": \"integer\", \"wrong_count\": \"integer\"}>",
+        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"user_id\": \"integer\", \"uuid\": \"string\", \"wrong_count\": \"integer\"}>",
         "status": 200
       },
       "list_has_item": true,

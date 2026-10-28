@@ -10,6 +10,7 @@ v2 重构方向（详见 docs/design.md）：分层架构 + 仓储模式 + 策�
 + Pydantic Settings 配置中心 + 向量检索 + SSE 流式输出。
 """
 
+import base64
 import csv
 import html
 import io
@@ -31,11 +32,13 @@ from pypdf import PdfReader
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import ai_helper, apppaths, auth
+from . import sync as sync_mod
 
 # ==================== v1 硬编码配置（v2 重构目标：统一配置中心） ====================
 # 便携发布后 data/ 与 .env 均位于 exe 同级目录，整个文件夹拷贝即可换机运行
 DB_PATH = apppaths.app_base_dir() / "data" / "app.db"
 UPLOAD_DIR = apppaths.app_base_dir() / "data" / "uploads"
+DATA_DIR = apppaths.app_base_dir() / "data"
 ALLOWED_EXT = {
     ".pdf": "pdf",
     ".docx": "docx",
@@ -143,7 +146,9 @@ def init_db() -> None:
         );
         """)
     conn.commit()
-    # 顺序不能反：wrong_book 重建时 user_id 列有外键，必须先保证 users.id=1 存在
+    # 顺序：先补 uuid 列（demo 插入要用）→ 保证 users.id=1 → 再做 user_id 迁移
+    # （wrong_book 重建时 user_id 列有外键，必须先保证 users.id=1 存在）
+    migrate_uuid(conn)
     ensure_demo_user(conn)
     migrate_legacy(conn)
     conn.close()
@@ -225,6 +230,49 @@ def migrate_legacy(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
+def migrate_uuid(conn: sqlite3.Connection) -> None:
+    """v1.2：给 users 与全部业务表加 uuid 身份列（跨机同步的行唯一键）。
+
+    幂等。老行回填随机 uuid；此后所有插入路径都必须生成 uuid。
+    """
+    tables = [r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+    )]
+    changed = False
+    for t in ("users", *USER_TABLES):
+        if t not in tables:
+            continue
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({t})")}
+        if "uuid" not in cols:
+            conn.execute(f"ALTER TABLE {t} ADD COLUMN uuid TEXT")
+            changed = True
+    conn.commit()
+    # 回填空 uuid（含历史行与迁移前插入的行）
+    for t in ("users", *USER_TABLES):
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({t})")}
+        if "uuid" not in cols:
+            continue
+        while True:
+            rows = conn.execute(
+                f"SELECT id FROM {t} WHERE uuid IS NULL OR uuid='' LIMIT 200"
+            ).fetchall()
+            if not rows:
+                break
+            for r in rows:
+                conn.execute(f"UPDATE {t} SET uuid=? WHERE id=?", (uuid.uuid4().hex, r["id"]))
+            conn.commit()
+            changed = True
+    # uuid 上唯一索引：同步合并按它查重
+    for t in ("users", *USER_TABLES):
+        idx = f"idx_{t}_uuid"
+        have = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+        if t in tables and idx not in have:
+            conn.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS {idx} ON {t}(uuid)")
+            changed = True
+    if changed:
+        conn.commit()
+
+
 def ensure_demo_user(conn: sqlite3.Connection) -> None:
     """保证 id=1 的演示账号存在：历史数据全部挂在它名下。
 
@@ -236,8 +284,8 @@ def ensure_demo_user(conn: sqlite3.Connection) -> None:
         return
     salt, digest = auth.hash_password("demo123")
     conn.execute(
-        "INSERT INTO users(id,username,password_hash,salt,display_name,created_at) VALUES(1,'demo',?,?,'演示数据',?)",
-        (digest, salt, datetime.now().isoformat(timespec="seconds")),
+        "INSERT INTO users(id,uuid,username,password_hash,salt,display_name,created_at) VALUES(1,?,'demo',?,?,'演示数据',?)",
+        (uuid.uuid4().hex, digest, salt, datetime.now().isoformat(timespec="seconds")),
     )
     conn.commit()
 
@@ -290,8 +338,8 @@ def register(body: dict):
 
     salt, digest = auth.hash_password(password)
     cur = conn.execute(
-        "INSERT INTO users(username,password_hash,salt,display_name,created_at) VALUES(?,?,?,?,?)",
-        (username, digest, salt, display_name, now()),
+        "INSERT INTO users(username,uuid,password_hash,salt,display_name,created_at) VALUES(?,?,?,?,?,?)",
+        (username, uuid.uuid4().hex, digest, salt, display_name, now()),
     )
     conn.commit()
     uid = cur.lastrowid
@@ -434,9 +482,10 @@ async def upload_material(
 
     conn = db()
     cur = conn.execute(
-        "INSERT INTO materials(user_id,title,course,filename,filetype,content,created_at) VALUES(?,?,?,?,?,?,?)",
+        "INSERT INTO materials(user_id,uuid,title,course,filename,filetype,content,created_at) VALUES(?,?,?,?,?,?,?,?)",
         (
             uid,
+            uuid.uuid4().hex,
             Path(file.filename).stem,
             course.strip() or "未分类",
             save_name,
@@ -509,9 +558,10 @@ def create_kp(body: dict, uid: int = Depends(require_user)):
         raise HTTPException(400, "知识点标题不能为空")
     conn = db()
     cur = conn.execute(
-        "INSERT INTO knowledge_points(user_id,material_id,course,title,description,created_at) VALUES(?,?,?,?,?,?)",
+        "INSERT INTO knowledge_points(user_id,uuid,material_id,course,title,description,created_at) VALUES(?,?,?,?,?,?,?)",
         (
             uid,
+            uuid.uuid4().hex,
             body.get("material_id"),
             body.get("course", "未分类"),
             title,
@@ -594,9 +644,10 @@ def create_task(body: dict, uid: int = Depends(require_user)):
             raise HTTPException(400, "due_date 需为 ISO 日期格式")
     conn = db()
     cur = conn.execute(
-        "INSERT INTO tasks(user_id,course,kp_id,title,description,due_date,status,created_at) VALUES(?,?,?,?,?,?,?,?)",
+        "INSERT INTO tasks(user_id,uuid,course,kp_id,title,description,due_date,status,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
         (
             uid,
+            uuid.uuid4().hex,
             body.get("course", "未分类"),
             body.get("kp_id"),
             title,
@@ -704,8 +755,17 @@ def generate_questions(body: dict, uid: int = Depends(require_user)):
     ids = []
     for q in questions[:num]:
         cur = conn.execute(
-            "INSERT INTO questions(user_id,kp_id,type,question,answer,source,created_at) VALUES(?,?,?,?,?,?,?)",
-            (uid, kid, q["type"], q["question"], q["answer"], source, now()),
+            "INSERT INTO questions(user_id,uuid,kp_id,type,question,answer,source,created_at) VALUES(?,?,?,?,?,?,?,?)",
+            (
+                uid,
+                uuid.uuid4().hex,
+                kid,
+                q["type"],
+                q["question"],
+                q["answer"],
+                source,
+                now(),
+            ),
         )
         ids.append(cur.lastrowid)
     conn.commit()
@@ -742,15 +802,15 @@ def submit_practice(body: dict, uid: int = Depends(require_user)):
         conn.close()
         raise HTTPException(404, "题目不存在")
     conn.execute(
-        "INSERT INTO practice_records(user_id,question_id,user_answer,correct,created_at) VALUES(?,?,?,?,?)",
-        (uid, qid, answer, correct, now()),
+        "INSERT INTO practice_records(user_id,uuid,question_id,user_answer,correct,created_at) VALUES(?,?,?,?,?,?)",
+        (uid, uuid.uuid4().hex, qid, answer, correct, now()),
     )
     if not correct:
         conn.execute(
-            """INSERT INTO wrong_book(user_id,question_id,wrong_count,last_wrong_at) VALUES(?,?,?,?)
+            """INSERT INTO wrong_book(user_id,uuid,question_id,wrong_count,last_wrong_at) VALUES(?,?,?,?,?)
                ON CONFLICT(question_id, user_id) DO UPDATE SET wrong_count=wrong_count+1,
                resolved=0, last_wrong_at=excluded.last_wrong_at""",
-            (uid, qid, 1, now()),
+            (uid, uuid.uuid4().hex, qid, 1, now()),
         )
     conn.commit()
     conn.close()
@@ -992,6 +1052,126 @@ def global_search(q: str, uid: int = Depends(require_user)):
         "questions": questions,
         "tasks": tasks,
     }
+
+
+# ==================== 跨机同步（v1.2：GitHub 私库当枢纽） ====================
+SYNC_CONFIG_PATH = DATA_DIR / "sync.json"
+
+
+def _load_sync_config() -> dict:
+    if not SYNC_CONFIG_PATH.is_file():
+        raise HTTPException(400, "尚未配置同步：请先填写 GitHub 仓库与令牌")
+    cfg = json.loads(SYNC_CONFIG_PATH.read_text(encoding="utf-8"))
+    for k in ("repo", "token"):
+        if not cfg.get(k):
+            raise HTTPException(400, f"同步配置缺少 {k}")
+    cfg.setdefault("branch", "main")
+    return cfg
+
+
+def _gh(cfg: dict, method: str, path: str, body: dict = None, raw: bool = False):
+    """调 GitHub API，统一走 httpx，错误转 HTTPException。"""
+    headers = {
+        "Authorization": f"Bearer {cfg['token']}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "ai-learning-assistant-sync",
+    }
+    try:
+        resp = httpx.request(method, f"https://api.github.com{path}", headers=headers,
+                             json=body, timeout=30)
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"GitHub 连接失败：{e}")
+    if resp.status_code >= 400:
+        detail = resp.json().get("message", resp.text) if "json" in resp.headers.get("content-type", "") else resp.text
+        raise HTTPException(resp.status_code, f"GitHub 返回 {resp.status_code}：{detail}")
+    if raw:
+        return resp.content
+    return resp.json() if resp.text else {}
+
+
+@app.post("/api/sync/config")
+def sync_config(body: dict, uid: int = Depends(require_user)):
+    """保存同步配置：GitHub 仓库（owner/name）+ 有写权限的令牌。"""
+    repo = (body.get("repo") or "").strip()
+    token = (body.get("token") or "").strip()
+    if not repo or "/" not in repo:
+        raise HTTPException(400, "repo 需为 owner/name 格式")
+    if not token:
+        raise HTTPException(400, "token 不能为空")
+    SYNC_CONFIG_PATH.write_text(json.dumps(
+        {"repo": repo, "token": token, "branch": body.get("branch") or "main"},
+        ensure_ascii=False), encoding="utf-8")
+    return {"saved": True}
+
+
+@app.get("/api/sync/export")
+def sync_export(uid: int = Depends(require_user)):
+    """导出本库全量数据（uuid 键控）。"""
+    conn = db()
+    payload = sync_mod.build_export(conn)
+    conn.close()
+    return payload
+
+
+@app.post("/api/sync/import")
+def sync_import(payload: dict, uid: int = Depends(require_user)):
+    """合并一份导出 payload（手动导入入口，测试与排障用）。"""
+    if not isinstance(payload, dict) or "users" not in payload:
+        raise HTTPException(400, "payload 格式不对：缺少 users 字段")
+    conn = db()
+    stats = sync_mod.apply_import(conn, payload)
+    conn.close()
+    return {"merged": stats}
+
+
+@app.post("/api/sync/push")
+def sync_push(uid: int = Depends(require_user)):
+    """把本库全量快照推到 GitHub 私库 sync/<username>.json（覆盖自己那份，不会碰别人的）。"""
+    cfg = _load_sync_config()
+    conn = db()
+    me = conn.execute("SELECT username FROM users WHERE id=?", (uid,)).fetchone()["username"]
+    payload = sync_mod.build_export(conn)
+    conn.close()
+    import base64
+    content = base64.b64encode(json.dumps(payload, ensure_ascii=False).encode("utf-8")).decode()
+    path = f"sync/{me}.json"
+    # 先查旧文件 sha（contents API 更新必须带 sha）
+    old_sha = None
+    r = httpx.get(f"https://api.github.com/repos/{cfg['repo']}/contents/{path}",
+                  headers={"Authorization": f"Bearer {cfg['token']}"},
+                  timeout=30)
+    if r.status_code == 200:
+        old_sha = r.json()["sha"]
+    body = {"message": f"sync: {me} @{datetime.now():%Y-%m-%d %H:%M}",
+            "content": content, "branch": cfg["branch"]}
+    if old_sha:
+        body["sha"] = old_sha
+    resp = _gh(cfg, "PUT", f"/repos/{cfg['repo']}/contents/{path}", body)
+    return {"pushed": path, "commit": resp.get("commit", {}).get("sha", "")[:10],
+            "rows": payload.get("counts", {})}
+
+
+@app.post("/api/sync/pull")
+def sync_pull(uid: int = Depends(require_user)):
+    """拉取私库 sync/ 目录下所有快照（除自己的），逐份合并入库。"""
+    cfg = _load_sync_config()
+    conn = db()
+    me = conn.execute("SELECT username FROM users WHERE id=?", (uid,)).fetchone()["username"]
+    listing = _gh(cfg, "GET", f"/repos/{cfg['repo']}/contents/sync?ref={cfg['branch']}")
+    files = [f for f in listing if f["name"].endswith(".json") and f["name"] != f"{me}.json"]
+    report = []
+    for f in files:
+        try:
+            remote_payload = json.loads(base64.b64decode(f["content"]).decode("utf-8"))
+        except Exception as e:
+            report.append({"file": f["name"], "error": f"解析失败 {e}"})
+            continue
+        stats = sync_mod.apply_import(conn, remote_payload)
+        report.append({"file": f["name"], "merged": stats})
+    conn.close()
+    if not files:
+        return {"pulled": 0, "note": "远端还没有其他人的快照（或对方还没推送）"}
+    return {"pulled": len(files), "detail": report}
 
 
 # ==================== 统计 ====================
