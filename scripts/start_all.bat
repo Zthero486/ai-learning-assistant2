@@ -1,8 +1,10 @@
 @echo off
-REM 一键启动：后端 + 前端 各开一个窗口
-start "AI学习助手-后端" cmd /c "%~dp0start_backend.bat"
-timeout /t 2 >nul
-start "AI学习助手-前端" cmd /c "%~dp0start_frontend.bat"
-echo 两个服务已在新窗口启动：
-echo   后端  http://127.0.0.1:8000  （接口文档 /docs）
-echo   前端  http://localhost:5173
+REM Start both backend and frontend in separate windows
+start "ai-backend" cmd /c "%~dp0start_backend.bat"
+ping -n 3 127.0.0.1 >nul
+start "ai-frontend" cmd /c "%~dp0start_frontend.bat"
+echo [OK] Services launched in new windows:
+echo   Backend : http://127.0.0.1:8000  (API docs at /docs)
+echo   Frontend: http://localhost:5173
+REM Open browser after frontend is ready (delayed in background)
+start "" cmd /c "ping -n 9 127.0.0.1 >nul & start http://localhost:5173"
