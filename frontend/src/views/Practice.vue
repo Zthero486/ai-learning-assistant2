@@ -1,9 +1,9 @@
 <template>
   <el-card class="page-card">
     <template #header>
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <span>练习</span>
-        <el-select v-model="kpFilter" placeholder="按知识点筛选" clearable style="width:200px" @change="load">
+      <div style="display:flex;gap:8px;align-items:center">
+        <el-button type="warning" plain :loading="gening" @click="genPersonal">错题专项</el-button>
+        <el-select v-model="kpFilter" placeholder="按史实要点筛选" clearable style="width:200px" @change="load">
           <el-option v-for="k in kps" :key="k.id" :label="k.title" :value="k.id" />
         </el-select>
       </div>
@@ -35,6 +35,20 @@ const kps = ref([])
 const kpFilter = ref(null)
 const answers = ref({})
 const revealed = ref({})
+const gening = ref(false)
+
+async function genPersonal() {
+  gening.value = true
+  try {
+    const r = await api.generatePersonal({ num: 5 })
+    ElMessage.success(`已按 ${r.based_on_wrong} 条错题生成 ${r.generated} 道针对性题`)
+    await load()
+  } catch (e) {
+    ElMessage.warning(e.message || '错题本里还没有未掌握的题')
+  } finally {
+    gening.value = false
+  }
+}
 
 async function load() {
   try {
@@ -63,10 +77,21 @@ async function submit(q) {
       { confirmButtonText: '答对了', cancelButtonText: '答错了', type: 'question' },
     ).then(() => resolve(true)).catch(() => resolve(false))
   })
-  await api.submitPractice({ question_id: q.id, answer: ans, correct })
-  ElMessage.success(correct ? '记为正确 ✓' : '已记入错题本 ✗')
+  const r = await api.submitPractice({ question_id: q.id, answer: ans, correct })
   answers.value[q.id] = ''
   revealed.value[q.id] = false
+  if (!correct) {
+    ElMessage.error('已记入错题本 ✗')
+    return
+  }
+  const wb = r && r.wrong_book
+  if (wb && wb.resolved) {
+    ElMessage.success('答对 ✓ 已掌握，已移出错题本')
+  } else if (wb && wb.correct_streak > 0) {
+    ElMessage.success(`答对 ✓ 已连对 ${wb.correct_streak}/${r.mastery_streak}，再对一次就移出错题本`)
+  } else {
+    ElMessage.success('记为正确 ✓')
+  }
 }
 
 onMounted(load)

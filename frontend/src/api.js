@@ -120,6 +120,8 @@ export default {
   downloadSyncFile: () =>
     downloadFile('/api/sync/export', `学习数据备份-${new Date().toISOString().slice(0, 10)}.json`),
   // 历史事件与时间轴
+  generatePersonal: (body) =>
+    request('/api/questions/generate-personal', { method: 'POST', body: JSON.stringify(body) }),
   events: (params = {}) => {
     const qs = new URLSearchParams()
     if (params.era) qs.set('era', params.era)

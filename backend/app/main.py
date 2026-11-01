@@ -304,17 +304,23 @@ def migrate_history(conn: sqlite3.Connection) -> None:
     幂等。统一用 ALTER ADD COLUMN，不重建表。
     """
     cols = {r[1] for r in conn.execute("PRAGMA table_info(knowledge_points)")}
-    if not cols:
-        return
     added = False
-    for name, decl in (
-        ("era", "TEXT NOT NULL DEFAULT ''"),
-        ("year_start", "INTEGER"),
-        ("year_end", "INTEGER"),
-    ):
-        if name not in cols:
-            conn.execute(f"ALTER TABLE knowledge_points ADD COLUMN {name} {decl}")
-            added = True
+    if cols:
+        for name, decl in (
+            ("era", "TEXT NOT NULL DEFAULT ''"),
+            ("year_start", "INTEGER"),
+            ("year_end", "INTEGER"),
+        ):
+            if name not in cols:
+                conn.execute(f"ALTER TABLE knowledge_points ADD COLUMN {name} {decl}")
+                added = True
+
+    # 错题渐进出库：记录连续答对次数，达阈值才移出活跃错题库
+    wcols = {r[1] for r in conn.execute("PRAGMA table_info(wrong_book)")}
+    if wcols and "correct_streak" not in wcols:
+        conn.execute("ALTER TABLE wrong_book ADD COLUMN correct_streak INTEGER NOT NULL DEFAULT 0")
+        added = True
+
     if added:
         conn.commit()
 
@@ -984,6 +990,101 @@ def generate_questions(body: dict, uid: int = Depends(require_user)):
     return {"generated": len(ids), "source": source}
 
 
+PERSONAL_MAX_WRONG = 8  # 一次个性化出题最多参考多少条错题
+
+
+@app.post("/api/questions/generate-personal")
+def generate_personal(body: dict, uid: int = Depends(require_user)):
+    """按本人未掌握的错题生成「同考点、换情境」的新题。
+
+    与 /api/questions/generate 的区别：那个只看知识点原文，
+    这个看学生真正做错的题，所以能针对性补漏。
+    """
+    num = min(int(body.get("num", 5)), 10)
+    kp_id = body.get("kp_id")
+    conn = db()
+    sql = """SELECT w.wrong_count, w.correct_streak, q.id AS question_id, q.question,
+                    q.answer, q.type, q.kp_id, k.title AS kp_title
+             FROM wrong_book w JOIN questions q ON q.id = w.question_id
+             LEFT JOIN knowledge_points k ON k.id = q.kp_id
+             WHERE w.user_id=? AND w.resolved=0"""
+    params: list = [uid]
+    if kp_id:
+        sql += " AND q.kp_id=?"
+        params.append(kp_id)
+    sql += " ORDER BY w.wrong_count DESC, w.last_wrong_at DESC LIMIT ?"
+    params.append(PERSONAL_MAX_WRONG)
+    wrongs = conn.execute(sql, params).fetchall()
+    conn.close()
+
+    if not wrongs:
+        raise HTTPException(400, "错题本里没有未掌握的题，先做几道自测再来")
+
+    brief = "\n".join(
+        f"{i + 1}. [错{w['wrong_count']}次][{w['type'] or '简答'}]"
+        f"[考点:{w['kp_title'] or '未分类'}] 题干：{w['question']}\n"
+        f"   参考答案：{w['answer']}"
+        for i, w in enumerate(wrongs)
+    )
+
+    questions: list = []
+    source = "fallback"
+    if ai_helper.is_available():
+        try:
+            raw = ai_helper.call_llm(
+                "你是高中历史教师，正在为学生做错题针对性训练。下面列出该学生做错且尚未掌握的题。"
+                "请为每个考点另出一道「同考点、同题型、不同材料或情境」的新题，严禁照抄原题干。"
+                "题型从「名词解释」「时间排序」「因果分析」「史料解读」「论述」中选取，"
+                "优先与原错题保持一致；史料解读题须引用材料原文。只输出 JSON 数组，"
+                '每项 {"type":"题型","question":"题干","answer":"参考答案"}，不得编造史实。',
+                f"共 {len(wrongs)} 条错题，请出 {num} 道新题。\n\n错题清单：\n{brief}",
+            )
+            questions = ai_helper.parse_questions_json(raw)
+            source = "ai"
+        except Exception:
+            questions = []
+
+    if not questions:
+        # 无 AI 时降级：原题加「重练」标记，至少保证流程可用
+        questions = [
+            {
+                "type": "错题重练",
+                "question": f"【重练·错误{w['wrong_count']}次】{w['question']}",
+                "answer": w["answer"],
+            }
+            for w in wrongs[:num]
+        ]
+        source = "fallback"
+
+    fallback_kp = kp_id or wrongs[0]["kp_id"]
+    conn = db()
+    ids = []
+    for q in questions[:num]:
+        cur = conn.execute(
+            "INSERT INTO questions(user_id,uuid,kp_id,type,question,answer,source,created_at)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (
+                uid,
+                uuid.uuid4().hex,
+                fallback_kp,
+                q.get("type", "错题重练"),
+                q["question"],
+                q.get("answer", ""),
+                source,
+                now(),
+            ),
+        )
+        ids.append(cur.lastrowid)
+    conn.commit()
+    conn.close()
+    return {
+        "generated": len(ids),
+        "source": source,
+        "based_on_wrong": len(wrongs),
+        "question_ids": ids,
+    }
+
+
 @app.get("/api/questions")
 def list_questions(kp_id: int = None, uid: int = Depends(require_user)):
     conn = db()
@@ -998,6 +1099,10 @@ def list_questions(kp_id: int = None, uid: int = Depends(require_user)):
     rows = conn.execute(sql, params).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# 连续答对几次算「掌握」，移出活跃错题库（一次答对可能是蒙的）
+MASTERY_STREAK = 2
 
 
 @app.post("/api/practice/submit")
@@ -1016,14 +1121,38 @@ def submit_practice(body: dict, uid: int = Depends(require_user)):
     )
     if not correct:
         conn.execute(
-            """INSERT INTO wrong_book(user_id,uuid,question_id,wrong_count,last_wrong_at) VALUES(?,?,?,?,?)
+            """INSERT INTO wrong_book(user_id,uuid,question_id,wrong_count,last_wrong_at)
+               VALUES(?,?,?,?,?)
                ON CONFLICT(question_id, user_id) DO UPDATE SET wrong_count=wrong_count+1,
-               resolved=0, last_wrong_at=excluded.last_wrong_at""",
+               resolved=0, correct_streak=0, last_wrong_at=excluded.last_wrong_at""",
             (uid, uuid.uuid4().hex, qid, 1, now()),
+        )
+    else:
+        # 答对：连续答对计数 +1，达到 MASTERY_STREAK 次才移出活跃错题库
+        # （错一次可能是蒙对，所以不一次就对就删）
+        conn.execute(
+            "UPDATE wrong_book SET correct_streak=correct_streak+1,"
+            " resolved=CASE WHEN correct_streak+1>=? THEN 1 ELSE resolved END"
+            " WHERE question_id=? AND user_id=?",
+            (MASTERY_STREAK, qid, uid),
         )
     conn.commit()
     conn.close()
-    return {"recorded": True, "correct": bool(correct)}
+    row = None
+    conn = db()
+    row = conn.execute(
+        "SELECT resolved, correct_streak, wrong_count FROM wrong_book"
+        " WHERE question_id=? AND user_id=?",
+        (qid, uid),
+    ).fetchone()
+    conn.close()
+    return {
+        "recorded": True,
+        "correct": bool(correct),
+        # 前端据此提示「已连对 1/2，再对一次就移出错题本」
+        "wrong_book": dict(row) if row else None,
+        "mastery_streak": MASTERY_STREAK,
+    }
 
 
 @app.get("/api/wrong-book")

@@ -731,6 +731,27 @@
         "422"
       ]
     },
+    "POST /api/questions/generate-personal": {
+      "operation_id": "generate_personal_api_questions_generate_personal_post",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
     "POST /api/sync/config": {
       "operation_id": "sync_config_api_sync_config_post",
       "params": [
@@ -1030,7 +1051,13 @@
       "submit": {
         "body": {
           "correct": "boolean",
-          "recorded": "boolean"
+          "mastery_streak": "integer",
+          "recorded": "boolean",
+          "wrong_book": {
+            "correct_streak": "integer",
+            "resolved": "integer",
+            "wrong_count": "integer"
+          }
         },
         "status": 200
       },
@@ -1096,11 +1123,11 @@
     },
     "GET /api/wrong-book": {
       "list": {
-        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"user_id\": \"integer\", \"uuid\": \"string\", \"wrong_count\": \"integer\"}>",
+        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"correct_streak\": \"integer\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"user_id\": \"integer\", \"uuid\": \"string\", \"wrong_count\": \"integer\"}>",
         "status": 200
       },
       "list_all": {
-        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"user_id\": \"integer\", \"uuid\": \"string\", \"wrong_count\": \"integer\"}>",
+        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"correct_streak\": \"integer\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"user_id\": \"integer\", \"uuid\": \"string\", \"wrong_count\": \"integer\"}>",
         "status": 200
       },
       "list_has_item": true,

@@ -5,6 +5,9 @@
         <span>错题本</span>
         <div style="display:flex;align-items:center;gap:12px">
           <el-checkbox v-model="onlyUnresolved" label="只看未解决" @change="load" />
+          <el-button size="small" type="warning" plain :loading="gening" @click="genSimilar">
+            AI 出同类题
+          </el-button>
           <el-button size="small" @click="doExportCsv" :loading="exporting">导出 CSV</el-button>
           <el-button size="small" @click="doPrint">导出 PDF</el-button>
         </div>
@@ -16,6 +19,9 @@
         <el-tag type="danger" size="small">错 {{ w.wrong_count }} 次</el-tag>
         <el-tag type="info" size="small" style="margin-left:6px">{{ w.kp_title || '未关联' }}</el-tag>
         <el-tag v-if="w.review_marked" type="warning" size="small" style="margin-left:6px">待重点复习</el-tag>
+        <el-tag v-if="w.correct_streak" type="success" size="small" style="margin-left:6px">
+          已连对 {{ w.correct_streak }}/2
+        </el-tag>
         <span class="w-date muted">{{ w.last_wrong_at }}</span>
       </div>
       <div class="w-question">{{ w.question }}</div>
@@ -36,6 +42,19 @@ import api from '../api'
 const items = ref([])
 const onlyUnresolved = ref(true)
 const exporting = ref(false)
+const gening = ref(false)
+
+async function genSimilar() {
+  gening.value = true
+  try {
+    const r = await api.generatePersonal({ num: 5 })
+    ElMessage.success(`已按 ${r.based_on_wrong} 条错题生成 ${r.generated} 道题，去「自测」页做`)
+  } catch (e) {
+    ElMessage.warning(e.message || '错题本里还没有未掌握的题')
+  } finally {
+    gening.value = false
+  }
+}
 
 async function load() {
   try {
