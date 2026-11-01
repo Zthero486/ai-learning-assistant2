@@ -920,6 +920,10 @@
               "base_url": "string",
               "model": "string"
             },
+            "gemini": {
+              "base_url": "string",
+              "model": "string"
+            },
             "openrouter": {
               "base_url": "string",
               "model": "string"
@@ -932,7 +936,8 @@
               "base_url": "string",
               "model": "string"
             }
-          }
+          },
+          "proxy": "string"
         },
         "status": 200
       },
@@ -955,6 +960,7 @@
       "presets": [
         "dashscope",
         "deepseek",
+        "gemini",
         "openrouter",
         "siliconflow",
         "zhipu"

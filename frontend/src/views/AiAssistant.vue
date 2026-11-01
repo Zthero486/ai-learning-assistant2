@@ -18,7 +18,7 @@
       show-icon
       style="margin-top:10px"
       :title="checkResult.message"
-      :description="checkResult.ok ? `接口地址：${checkResult.base_url || ''}　模型：${checkResult.model || ''}` : '免费方案：智谱 GLM-4-Flash（open.bigmodel.cn）注册后即可获得 API Key；也可点「配置 API Key」在软件内直接填写，无需手工改文件。'"
+      :description="checkResult.ok ? `接口地址：${checkResult.base_url || ''}　模型：${checkResult.model || ''}` : '若提示「网络不通」，多为境内无法直连 Google：在「配置 API Key → 代理地址」填入 http://127.0.0.1:7897（Clash 默认端口）；也可换成国内直连的智谱 GLM-4-Flash。'"
     />
   </el-card>
 
@@ -28,13 +28,14 @@
       :closable="false"
       show-icon
       title="不配置也能用，配置后答疑/总结/出题将由大模型驱动"
-      description="推荐智谱 GLM-4-Flash：永久免费、国内直连。注册地址 open.bigmodel.cn → 控制台 → API Keys，复制后粘贴到下方。"
+      description="已内置 Google Gemini 配置；境内访问 Google 需代理，Clash 一般为 http://127.0.0.1:7897，填在下方「代理地址」即可。国内直连可换智谱 GLM-4-Flash（open.bigmodel.cn，永久免费）。"
       style="margin-bottom:14px"
     />
     <el-form label-width="90px">
       <el-form-item label="平台预设">
         <el-select v-model="config.preset" style="width:100%" @change="applyPreset">
-          <el-option label="智谱 GLM（推荐，永久免费）" value="zhipu" />
+          <el-option label="Google Gemini（已配置）" value="gemini" />
+          <el-option label="智谱 GLM（国内直连，永久免费）" value="zhipu" />
           <el-option label="硅基流动 SiliconFlow（9B 以下免费）" value="siliconflow" />
           <el-option label="阿里云百炼（新用户额度）" value="dashscope" />
           <el-option label="DeepSeek（付费，推理强）" value="deepseek" />
@@ -49,6 +50,9 @@
       </el-form-item>
       <el-form-item label="模型名">
         <el-input v-model="config.model" />
+      </el-form-item>
+      <el-form-item label="代理地址">
+        <el-input v-model="config.proxy" placeholder="可留空；境内访问 Google 填 http://127.0.0.1:7897" />
       </el-form-item>
       <el-form-item label="配置文件">
         <span class="muted">{{ config.env_path || '程序目录下的 .env' }}</span>
@@ -70,7 +74,7 @@
           v-model="ask.question"
           type="textarea"
           :rows="3"
-          placeholder="例如：强化学习和监督学习的区别是什么？"
+          placeholder="例如：商鞅变法为什么能在秦国推行？郡县制与分封制的根本区别是什么？"
         />
         <el-button type="primary" style="margin-top:10px" :loading="askLoading" @click="doAsk">提问</el-button>
         <el-empty v-if="!askResult" description="回答会基于你导入的史料生成" :image-size="70" />
@@ -115,7 +119,7 @@ const checkResult = ref(null)
 const configVisible = ref(false)
 const saveLoading = ref(false)
 const presets = ref({})
-const config = ref({ preset: 'zhipu', api_key: '', base_url: '', model: '', env_path: '' })
+const config = ref({ preset: 'gemini', api_key: '', base_url: '', model: '', proxy: '', env_path: '' })
 
 async function loadStatus() {
   try {
@@ -131,10 +135,11 @@ async function openConfig() {
     const c = await api.aiConfig()
     presets.value = c.presets || {}
     config.value = {
-      preset: 'zhipu',
+      preset: 'gemini',
       api_key: '',
       base_url: c.base_url,
       model: c.model,
+      proxy: c.proxy || '',
       env_path: c.env_path,
     }
     configVisible.value = true
@@ -159,6 +164,7 @@ async function saveConfig() {
       api_key: config.value.api_key.trim(),
       base_url: config.value.base_url,
       model: config.value.model,
+      proxy: config.value.proxy,
     })
     ElMessage.success(r.message)
     configVisible.value = false

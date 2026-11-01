@@ -1579,18 +1579,21 @@ def set_ai_config(body: dict, uid: int = Depends(require_user)):
     api_key = (body.get("api_key") or "").strip()
     base_url = (body.get("base_url") or ai_helper.DEFAULT_BASE_URL).strip().rstrip("/")
     model = (body.get("model") or ai_helper.DEFAULT_MODEL).strip()
+    proxy = (body.get("proxy") or "").strip()
 
     if api_key and len(api_key) < 8:
         raise HTTPException(400, "API Key 看起来不完整（长度过短），请检查是否复制齐全")
     if not base_url.startswith("http"):
         raise HTTPException(400, "接口地址必须以 http 开头")
+    if proxy and not proxy.startswith("http"):
+        raise HTTPException(400, "代理地址需形如 http://127.0.0.1:7897")
 
     try:
-        ai_helper.write_env_config(api_key, base_url, model)
+        ai_helper.write_env_config(api_key, base_url, model, proxy)
     except OSError as e:
         raise HTTPException(500, f"配置写入失败：{e}（请确认程序所在目录可写）")
 
-    ai_helper.apply_runtime_config(api_key, base_url, model)
+    ai_helper.apply_runtime_config(api_key, base_url, model, proxy)
     return {
         "saved": True,
         "configured": bool(api_key),

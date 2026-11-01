@@ -37,6 +37,11 @@ PROVIDER_PRESETS = {
         "base_url": "https://openrouter.ai/api/v1",
         "model": "deepseek/deepseek-chat:free",
     },
+    # Google Gemini 的 OpenAI 兼容端点（国内直连不通，需 AI_PROXY 或系统代理）
+    "gemini": {
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": "gemini-flash-latest",
+    },
 }
 
 
@@ -79,6 +84,15 @@ def get_model() -> str:
     return os.environ.get("AI_MODEL", DEFAULT_MODEL)
 
 
+def get_proxy() -> str:
+    """可选代理：AI_PROXY=http://127.0.0.1:7897。
+
+    留空时交给 httpx 的 trust_env（自动读 HTTPS_PROXY 与 Windows 系统代理）。
+    访问 Google Gemini 等境外接口时通常需要填。
+    """
+    return (os.environ.get("AI_PROXY") or "").strip()
+
+
 def mask_key(key: str) -> str:
     """脱敏展示 key，避免完整回显到界面或日志。"""
     if not key:
@@ -86,18 +100,21 @@ def mask_key(key: str) -> str:
     return key[:4] + "*" * max(len(key) - 8, 4) + key[-4:] if len(key) >= 10 else "****"
 
 
-def apply_runtime_config(api_key: str, base_url: str, model: str) -> None:
+def apply_runtime_config(api_key: str, base_url: str, model: str, proxy: str = "") -> None:
     """把配置写入当前进程环境，使设置立即生效（无需重启程序）。"""
     os.environ["AI_API_KEY"] = api_key
     os.environ["AI_BASE_URL"] = base_url
     os.environ["AI_MODEL"] = model
+    os.environ["AI_PROXY"] = proxy or ""
 
 
-def write_env_config(api_key: str, base_url: str, model: str) -> None:
+def write_env_config(api_key: str, base_url: str, model: str, proxy: str = "") -> None:
     """把 AI 配置写回 .env（保留其他行与注释），使用 UTF-8 无 BOM。"""
     path = apppaths.env_file()
     path.parent.mkdir(parents=True, exist_ok=True)
     pairs = {"AI_API_KEY": api_key, "AI_BASE_URL": base_url, "AI_MODEL": model}
+    if proxy:
+        pairs["AI_PROXY"] = proxy
 
     lines = []
     if path.exists():
@@ -131,6 +148,7 @@ def config_snapshot() -> dict:
         "api_key_masked": mask_key(key),
         "base_url": get_base_url(),
         "model": get_model(),
+        "proxy": get_proxy(),
         "env_path": str(apppaths.env_file()),
     }
 
@@ -140,6 +158,7 @@ def call_llm(system_prompt: str, user_prompt: str) -> str:
     api_key = get_api_key()
     if not api_key:
         raise RuntimeError("未配置 AI_API_KEY")
+    proxy = get_proxy()
     resp = httpx.post(
         f"{get_base_url()}/chat/completions",
         headers={"Authorization": f"Bearer {api_key}"},
@@ -152,6 +171,7 @@ def call_llm(system_prompt: str, user_prompt: str) -> str:
             "temperature": 0.5,
         },
         timeout=REQUEST_TIMEOUT,
+        proxy=proxy or None,
     )
     resp.raise_for_status()
     return resp.json()["choices"][0]["message"]["content"]
@@ -182,7 +202,10 @@ def test_connection() -> dict:
             "message": f"调用失败：{hint}（HTTP {code}）",
         }
     except httpx.HTTPError as e:
-        return {"ok": False, "reason": "network", "message": f"网络不通：{e}"}
+        hint = ""
+        if not get_proxy() and ("gemini" in get_base_url() or "openai.com" in get_base_url()):
+            hint = "（该接口在境内需代理：可在 .env 里设置 AI_PROXY=http://127.0.0.1:端口）"
+        return {"ok": False, "reason": "network", "message": f"网络不通：{e}{hint}"}
     return {
         "ok": True,
         "reason": "ok",

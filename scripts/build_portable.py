@@ -46,19 +46,21 @@ USAGE_TEXT = """历史学习助手 v1.0 —— 使用说明
     data/uploads/   导入的原始文档
 整个文件夹可以整体拷贝到别的电脑，数据一起带走（便携绿色版，免安装）。
 
-【想用真·大模型 AI（可选，免费即可）】
-软件不配置也能用：AI 功能会自动降级为本地规则引擎（资料检索式答疑 + 统计分析）。
-想要真正的大模型回答，按下面两步（不用改任何文件）：
+【AI 功能】
+AI 让软件能真·大模型地工作：史料总结、史料答疑、根据错题个性化出题、薄弱点分析。
+没有 .env 时也能用，只是会降级为本地规则引擎（资料检索式答疑 + 抽取式总结 + 统计分析）。
 
-1. 领一个免费 Key：浏览器打开 https://open.bigmodel.cn 注册 → 控制台 → API Keys
-   → 新建并复制（GLM-4-Flash 模型永久免费，够课设用）
-2. 打开软件左侧的「AI 助手」页面 → 点「配置 API Key」→ 粘贴 Key →
-   平台预设选「智谱 GLM（推荐，永久免费）」→ 保存并生效
+想开启大模型（两种方式，任选）：
 
-保存后会自动检测连接：显示绿色"AI 连接正常"即成功。
-以后想换别的平台（硅基流动 / 通义千问 / DeepSeek），在同一弹窗里换个预设即可。
+方式一（推荐，免改文件）：打开左侧「AI 助手」→「配置 API Key」→
+  平台预设选「智谱 GLM（国内直连，永久免费）」，或「Google Gemini」（需代理）→
+  粘贴 Key → 保存并生效 → 点「检测 AI 连接」看到绿色"连接成功"即可。
 
-（进阶：也可手工配置——把 .env.example 复制为 .env，填入 AI_API_KEY 后重启程序）
+方式二：把 .env.example 复制为 .env（exe 同级），填写四行后重启程序。
+
+注意：Gemini 接口在境内必须走代理。用了代理但提示"网络不通"时，在
+「配置 API Key → 代理地址」里填 http://127.0.0.1:7897（换成你自己的端口）。
+不想折腾代理就直接用智谱 GLM，国内直连、永久免费。
 
 【浏览器没自动打开怎么办】
 手动打开浏览器，访问 http://127.0.0.1:8000
@@ -171,6 +173,12 @@ def assemble_release() -> None:
     env_example = BACKEND / ".env.example"
     if env_example.exists():
         shutil.copy2(env_example, RELEASE / ".env.example")
+    # 开发机上已配好的 .env 一并带上：打包后的程序读取 exe 同级的 .env，
+    # 这样交付给老师/同学时 AI 开箱可用。不想分发 key 就手工删掉这个文件。
+    env_file = BACKEND / ".env"
+    if env_file.exists():
+        shutil.copy2(env_file, RELEASE / ".env")
+        print("[note] 已把 backend/.env 复制到 release/.env（含 AI Key，注意分发范围）")
     (RELEASE / "data").mkdir(exist_ok=True)
 
     exe = RELEASE / f"{EXE_NAME}.exe"
@@ -195,11 +203,13 @@ def make_zip() -> None:
 
     archive = RELEASE.parent / f"历史学习助手-v{VERSION}-便携版.zip"
     inner = f"历史学习助手-v{VERSION}"
-    skip_names = {"run.log"}
+    # .env 里有 AI Key，token.key 是令牌签名密钥（每台机器首次启动自建），都不进分享包
+    skip_names = {"run.log", ".env", "token.key"}
+    skip_prefix = ("app.db.bak",)
     count = 0
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         for path in sorted(RELEASE.rglob("*")):
-            if path.name in skip_names:
+            if path.name in skip_names or path.name.startswith(skip_prefix):
                 continue
             rel = path.relative_to(RELEASE)
             zf.write(path, f"{inner}/{rel.as_posix()}")

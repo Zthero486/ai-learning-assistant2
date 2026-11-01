@@ -1,6 +1,6 @@
-# AI 智能学习助手
+# 历史学习助手
 
-> 面向学习场景的个人智能学习空间：课程资料 → 知识点 → 学习任务 → 练习 → 错题 → AI 分析，形成完整学习闭环。
+> 面向历史学科的个人智能学习空间：史料笔记 → 史实要点 → 复习任务 → 自测 → 错题 → AI 分析，形成完整学习闭环；内置历史时间轴，可横向串联中外史事。
 
 ![status](https://img.shields.io/badge/version-v1.0--naive-blue) ![python](https://img.shields.io/badge/python-3.10+-green) ![node](https://img.shields.io/badge/node-18+-green)
 
@@ -10,12 +10,13 @@
 
 | 模块 | 子功能 | 说明 |
 |------|--------|------|
-| 课程资料管理 | 资料导入 / 解析 / 归档 | 支持 PDF、Word、Markdown、TXT 导入，自动提取正文并按课程归类 |
-| 知识点管理 | 提取 / 标注 / 关联 | 从资料整理知识点，支持人工补充标注 |
-| 学习任务管理 | 制定 / 跟踪 | 按课程与知识点制定任务，跟踪完成状态 |
-| 练习与错题 | 练习记录 / 错题本 | 记录练习结果，自动沉淀错题并支持回顾 |
-| AI 学习辅助 | 总结 / 答疑 / 薄弱点分析 / 出题 | 支持任意 OpenAI 兼容大模型（智谱 GLM 永久免费即可用）；**未配置 key 时自动降级为本地规则引擎，软件照常可用** |
-| 学习记录与统计 | 正确率 / 进度可视化 | 按知识点统计正确率，图表展示掌握情况 |
+| 史料笔记 | 导入 / 解析 / 归档 | 支持 PDF、Word、Markdown、TXT 导入，自动提取正文并按时期归类 |
+| 史实要点 | 提取 / 标注 / 关联 | 从史料整理史实要点，标注所属时期与起止年份 |
+| 历史时间轴 | 聚合 / 编辑 | 按时期分组展示史事，中外史可混排；点击展开背景-经过-影响-评价五要素 |
+| 复习任务 | 制定 / 跟踪 | 按时期与史实要点制定复习任务，跟踪完成状态 |
+| 自测与错题 | 练习记录 / 错题本 | 五种历史题型作答；答错自动入错题本，连对 2 次才移出 |
+| AI 学习辅助 | 总结 / 答疑 / 薄弱点分析 / 个性化出题 | 支持任意 OpenAI 兼容大模型（Gemini、智谱 GLM 等）；**未配置 key 时自动降级为本地规则引擎，软件照常可用** |
+| 学习记录与统计 | 正确率 / 进度可视化 | 按史实要点统计正确率，图表展示掌握情况 |
 
 ## 技术栈
 
@@ -61,7 +62,8 @@ python scripts/build_portable.py
 
 | 平台 | 免费情况 | AI_BASE_URL | AI_MODEL |
 | --- | --- | --- | --- |
-| **智谱 GLM（推荐）** | GLM-4-Flash 永久免费，128K 上下文 | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` |
+| **智谱 GLM（国内推荐）** | GLM-4-Flash 永久免费，128K 上下文 | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` |
+| **Google Gemini** | 有免费额度，需代理 | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-3-flash-preview` |
 | 硅基流动 | 9B 以下模型永久免费 | `https://api.siliconflow.cn/v1` | `Qwen/Qwen2.5-7B-Instruct` |
 | 阿里云百炼 | 新用户百万级 Token（约 90 天） | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-turbo` |
 | DeepSeek（付费） | 便宜、推理强 | `https://api.deepseek.com` | `deepseek-chat` |
@@ -71,6 +73,9 @@ AI_API_KEY=你的key
 AI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 AI_MODEL=glm-4-flash
 ```
+
+> 走 Google 等境外接口时多配一行 `AI_PROXY=http://127.0.0.1:7897`（按自己代理端口改）；
+> 不填则自动读取系统代理与 `HTTPS_PROXY` 环境变量。国内平台留空即可。
 
 不配置也能运行——AI 接口自动降级为本地规则引擎（关键词检索 + 统计分析）。
 配置后可通过界面的「检测 AI 连接」或 `POST /api/ai/test` 自检，接口会针对 401/402/404/429 给出具体原因。
