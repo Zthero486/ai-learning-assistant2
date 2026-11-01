@@ -7,7 +7,7 @@
           ref="inputRef"
           v-model="query"
           class="gs-input"
-          placeholder="搜索资料 / 知识点 / 题目 / 任务…"
+          placeholder="搜索史料 / 史实 / 题目 / 复习任务…"
           @input="onInput"
           @keydown.esc="close"
           @keydown.down.prevent="move(1)"

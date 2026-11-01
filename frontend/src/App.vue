@@ -1,21 +1,24 @@
 <template>
   <el-container class="layout">
     <el-aside width="200px" class="aside">
-      <div class="logo">📘 AI 学习助手</div>
+      <div class="logo">📜 历史学习助手</div>
       <el-menu :default-active="$route.path" router>
         <el-menu-item index="/"><el-icon><Odometer /></el-icon>学习看板</el-menu-item>
-        <el-menu-item index="/materials"><el-icon><FolderOpened /></el-icon>课程资料</el-menu-item>
-        <el-menu-item index="/knowledge"><el-icon><Collection /></el-icon>知识点</el-menu-item>
-        <el-menu-item index="/tasks"><el-icon><List /></el-icon>学习任务</el-menu-item>
-        <el-menu-item index="/practice"><el-icon><EditPen /></el-icon>练习</el-menu-item>
+        <el-menu-item index="/timeline"><el-icon><Clock /></el-icon>历史时间轴</el-menu-item>
+        <el-menu-item index="/materials"><el-icon><FolderOpened /></el-icon>史料笔记</el-menu-item>
+        <el-menu-item index="/knowledge"><el-icon><Collection /></el-icon>史实要点</el-menu-item>
+        <el-menu-item index="/tasks"><el-icon><List /></el-icon>复习任务</el-menu-item>
+        <el-menu-item index="/practice"><el-icon><EditPen /></el-icon>自测</el-menu-item>
         <el-menu-item index="/wrong-book"><el-icon><WarningFilled /></el-icon>错题本</el-menu-item>
         <el-menu-item index="/ai"><el-icon><ChatDotRound /></el-icon>AI 助手</el-menu-item>
-        <el-menu-item index="/sync"><el-icon><Refresh /></el-icon>数据同步</el-menu-item>
       </el-menu>
       <div class="user-box">
         <div class="search-hint" @click="$refs.gs.open()">🔍 搜索 <span class="kbd">Ctrl+K</span></div>
         <div class="user-name">👤 {{ username }}</div>
-        <el-button size="small" type="danger" plain @click="logout">退出登录</el-button>
+        <div class="mini-links">
+          <router-link to="/sync" class="mini-link">数据同步</router-link>
+          <el-button size="small" type="danger" plain @click="logout">退出</el-button>
+        </div>
       </div>
     </el-aside>
     <el-main class="main">
@@ -29,7 +32,7 @@
 // v1.2：侧栏底部加搜索入口、当前用户与退出
 import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Odometer, FolderOpened, Collection, List, EditPen, WarningFilled, ChatDotRound, Refresh } from '@element-plus/icons-vue'
+import { Odometer, FolderOpened, Collection, List, EditPen, WarningFilled, ChatDotRound, Clock } from '@element-plus/icons-vue'
 import { auth } from './api'
 import GlobalSearch from './components/GlobalSearch.vue'
 
@@ -64,6 +67,9 @@ body { margin: 0; background: #f5f7fa; }
 .search-hint:hover { background: #f0f6ff; }
 .kbd { font-size: 11px; color: #909399; border: 1px solid #dcdfe6; border-radius: 4px; padding: 1px 5px; }
 .user-name { font-size: 13px; color: #606266; margin-bottom: 8px; }
+.mini-links { display: flex; align-items: center; justify-content: space-between; }
+.mini-link { font-size: 12px; color: #909399; text-decoration: none; }
+.mini-link:hover { color: #409eff; }
 .main { overflow: auto; }
 .page-card { margin-bottom: 16px; }
 .muted { color: #909399; font-size: 13px; }

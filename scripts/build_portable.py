@@ -29,7 +29,7 @@ BUILD = ROOT / "build"
 EXE_NAME = "AILearningAssistant"
 VERSION = "1.0"
 
-USAGE_TEXT = """AI 智能学习助手 v1.0 —— 使用说明
+USAGE_TEXT = """历史学习助手 v1.0 —— 使用说明
 ====================================================
 
 【怎么启动】
@@ -193,8 +193,8 @@ def make_zip() -> None:
     if not (RELEASE / f"{EXE_NAME}.exe").exists():
         sys.exit("未找到 release 中的 exe，请先完整构建一次")
 
-    archive = RELEASE.parent / f"AI智能学习助手-v{VERSION}-便携版.zip"
-    inner = f"AI智能学习助手-v{VERSION}"
+    archive = RELEASE.parent / f"历史学习助手-v{VERSION}-便携版.zip"
+    inner = f"历史学习助手-v{VERSION}"
     skip_names = {"run.log"}
     count = 0
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:

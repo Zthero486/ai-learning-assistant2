@@ -12,8 +12,8 @@
     <el-row :gutter="16">
       <el-col :span="14">
         <el-card class="page-card">
-          <template #header>知识点掌握情况（正确率）</template>
-          <el-empty v-if="!perKp.length" description="先导入资料并创建知识点、完成练习后这里会出现统计" />
+          <template #header>史实要点掌握情况（正确率）</template>
+          <el-empty v-if="!perKp.length" description="先导入史料、建立要点并完成自测，这里会出现统计" />
           <div v-for="k in perKp" :key="k.kp_id" class="kp-row">
             <span class="kp-title">{{ k.title }}</span>
             <el-tag v-if="k.weak" type="danger" size="small" style="margin-right:8px">薄弱</el-tag>
@@ -28,7 +28,7 @@
       </el-col>
       <el-col :span="10">
         <el-card class="page-card">
-          <template #header>近 3 天到期任务</template>
+          <template #header>近 3 天待复习</template>
           <el-empty v-if="!dueTasks.length" description="暂无近期到期任务" :image-size="60" />
           <div v-for="t in dueTasks" :key="t.id" class="due-row">
             <el-tag type="warning" size="small">{{ t.due_date }}</el-tag>
@@ -58,9 +58,9 @@ const dueTasks = ref([])
 const aiAvailable = ref(null)
 
 const totalCards = computed(() => [
-  { label: '课程资料', value: stats.value.totals.materials ?? 0 },
-  { label: '知识点', value: stats.value.totals.kps ?? 0 },
-  { label: '练习次数', value: stats.value.totals.attempts ?? 0 },
+  { label: '史料笔记', value: stats.value.totals.materials ?? 0 },
+  { label: '史实要点', value: stats.value.totals.kps ?? 0 },
+  { label: '自测次数', value: stats.value.totals.attempts ?? 0 },
   { label: '未解决错题', value: stats.value.totals.unresolved_wrong ?? 0 },
 ])
 

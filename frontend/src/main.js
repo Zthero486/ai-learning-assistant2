@@ -8,6 +8,7 @@ import api from './api'
 
 // v1.1 朴素路由：视图级组件 + 登录守卫（v2 引入 Pinia 全局状态）
 import Dashboard from './views/Dashboard.vue'
+import Timeline from './views/Timeline.vue'
 import Materials from './views/Materials.vue'
 import KnowledgePoints from './views/KnowledgePoints.vue'
 import Tasks from './views/Tasks.vue'
@@ -23,9 +24,10 @@ const router = createRouter({
   routes: [
     { path: '/login', name: 'login', component: Login, meta: { title: '登录', public: true } },
     { path: '/', name: 'dashboard', component: Dashboard, meta: { title: '学习看板' } },
-    { path: '/materials', name: 'materials', component: Materials, meta: { title: '课程资料' } },
+    { path: '/timeline', name: 'timeline', component: Timeline, meta: { title: '历史时间轴' } },
+    { path: '/materials', name: 'materials', component: Materials, meta: { title: '史料笔记' } },
     { path: '/knowledge', name: 'knowledge', component: KnowledgePoints, meta: { title: '知识点' } },
-    { path: '/tasks', name: 'tasks', component: Tasks, meta: { title: '学习任务' } },
+    { path: '/tasks', name: 'tasks', component: Tasks, meta: { title: '复习任务' } },
     { path: '/practice', name: 'practice', component: Practice, meta: { title: '练习' } },
     { path: '/wrong-book', name: 'wrongBook', component: WrongBook, meta: { title: '错题本' } },
     { path: '/ai', name: 'ai', component: AiAssistant, meta: { title: 'AI 助手' } },
@@ -40,7 +42,7 @@ router.beforeEach((to) => {
 })
 
 router.afterEach((to) => {
-  document.title = to.meta.title ? `${to.meta.title} · AI 智能学习助手` : 'AI 智能学习助手'
+  document.title = to.meta.title ? `${to.meta.title} · 历史学习助手` : '历史学习助手'
 })
 
 // 暴露 api 给各视图（v1 朴素做法；v2 改为模块化注入）

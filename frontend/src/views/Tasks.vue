@@ -2,13 +2,13 @@
   <el-card class="page-card">
     <template #header>
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <span>学习任务</span>
+        <span>复习任务</span>
         <el-button type="primary" @click="dialogVisible = true">新建任务</el-button>
       </div>
     </template>
     <el-table :data="tasks" v-loading="loading">
       <el-table-column prop="title" label="任务" min-width="160" />
-      <el-table-column prop="course" label="课程" width="110" />
+      <el-table-column prop="course" label="时期" width="110" />
       <el-table-column prop="kp_title" label="关联知识点" width="130">
         <template #default="{ row }">{{ row.kp_title || '—' }}</template>
       </el-table-column>
@@ -34,10 +34,10 @@
     </el-table>
   </el-card>
 
-  <el-dialog v-model="dialogVisible" title="新建学习任务" width="520px">
+  <el-dialog v-model="dialogVisible" title="新建复习任务" width="520px">
     <el-form label-width="90px">
       <el-form-item label="任务标题"><el-input v-model="form.title" /></el-form-item>
-      <el-form-item label="课程"><el-input v-model="form.course" /></el-form-item>
+      <el-form-item label="时期"><el-input v-model="form.course" /></el-form-item>
       <el-form-item label="关联知识点">
         <el-select v-model="form.kp_id" clearable style="width:100%">
           <el-option v-for="k in kps" :key="k.id" :label="k.title" :value="k.id" />

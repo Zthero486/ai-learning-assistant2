@@ -71,6 +71,11 @@ CONTRACT_MANIFEST = {
     "GET /api/knowledge-points",
     "PUT /api/knowledge-points/{kid}",
     "DELETE /api/knowledge-points/{kid}",
+    "POST /api/events",
+    "GET /api/events",
+    "PUT /api/events/{eid}",
+    "DELETE /api/events/{eid}",
+    "GET /api/timeline",
     "POST /api/tasks",
     "GET /api/tasks",
     "PATCH /api/tasks/{tid}/status",
@@ -507,7 +512,7 @@ def test_接口清单与实测一致():
         f"  清单里有、代码里没有：{sorted(CONTRACT_MANIFEST - actual)}\n"
         "新增/删除接口时，请同步更新 CONTRACT_MANIFEST 并刷新快照。"
     )
-    assert len(CONTRACT_MANIFEST) == 38, f"接口数量应为 38，当前 {len(CONTRACT_MANIFEST)}"
+    assert len(CONTRACT_MANIFEST) == 43, f"接口数量应为 43，当前 {len(CONTRACT_MANIFEST)}"
 
 
 def test_openapi_与路由表一致():

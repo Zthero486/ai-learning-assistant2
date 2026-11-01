@@ -73,7 +73,7 @@
           placeholder="例如：强化学习和监督学习的区别是什么？"
         />
         <el-button type="primary" style="margin-top:10px" :loading="askLoading" @click="doAsk">提问</el-button>
-        <el-empty v-if="!askResult" description="回答会基于你导入的课程资料生成" :image-size="70" />
+        <el-empty v-if="!askResult" description="回答会基于你导入的史料生成" :image-size="70" />
         <pre v-else class="ai-output">{{ askResult }}</pre>
       </el-card>
     </el-col>

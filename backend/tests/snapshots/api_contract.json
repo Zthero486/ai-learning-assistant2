@@ -1,5 +1,27 @@
 {
   "openapi": {
+    "DELETE /api/events/{eid}": {
+      "operation_id": "delete_event_api_events__eid__delete",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "path",
+          "name": "eid",
+          "required": true,
+          "schema": "integer"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
     "DELETE /api/knowledge-points/{kid}": {
       "operation_id": "delete_kp_api_knowledge_points__kid__delete",
       "params": [
@@ -90,6 +112,34 @@
           "name": "authorization",
           "required": false,
           "schema": "string"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "GET /api/events": {
+      "operation_id": "list_events_api_events_get",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "query",
+          "name": "era",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "query",
+          "name": "kp_id",
+          "required": false,
+          "schema": "integer"
         }
       ],
       "request_body": null,
@@ -278,6 +328,28 @@
           "name": "days",
           "required": false,
           "schema": "integer"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "GET /api/timeline": {
+      "operation_id": "get_timeline_api_timeline_get",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "query",
+          "name": "era",
+          "required": false,
+          "schema": "string"
         }
       ],
       "request_body": null,
@@ -554,6 +626,27 @@
         "422"
       ]
     },
+    "POST /api/events": {
+      "operation_id": "create_event_api_events_post",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
     "POST /api/knowledge-points": {
       "operation_id": "create_kp_api_knowledge_points_post",
       "params": [
@@ -733,6 +826,33 @@
         "422"
       ]
     },
+    "PUT /api/events/{eid}": {
+      "operation_id": "update_event_api_events__eid__put",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "path",
+          "name": "eid",
+          "required": true,
+          "schema": "integer"
+        }
+      ],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
     "PUT /api/knowledge-points/{kid}": {
       "operation_id": "update_kp_api_knowledge_points__kid__put",
       "params": [
@@ -836,11 +956,11 @@
         "status": 400
       },
       "list": {
-        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"id\": \"integer\", \"material_id\": \"integer\", \"material_title\": \"string\", \"question_count\": \"integer\", \"title\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\"}>",
+        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"era\": \"string\", \"id\": \"integer\", \"material_id\": \"integer\", \"material_title\": \"string\", \"question_count\": \"integer\", \"title\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\", \"year_end\": \"null\", \"year_start\": \"null\"}>",
         "status": 200
       },
       "list_filtered": {
-        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"id\": \"integer\", \"material_id\": \"integer\", \"material_title\": \"string\", \"question_count\": \"integer\", \"title\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\"}>",
+        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"era\": \"string\", \"id\": \"integer\", \"material_id\": \"integer\", \"material_title\": \"string\", \"question_count\": \"integer\", \"title\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\", \"year_end\": \"null\", \"year_start\": \"null\"}>",
         "status": 200
       },
       "update": {

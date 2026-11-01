@@ -2,15 +2,15 @@
   <el-card class="page-card">
     <template #header>
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <span>知识点管理</span>
-        <el-button type="primary" @click="dialogVisible = true">新建知识点</el-button>
+        <span>史实要点</span>
+        <el-button type="primary" @click="dialogVisible = true">新建要点</el-button>
       </div>
     </template>
     <el-table :data="kps" v-loading="loading">
-      <el-table-column prop="title" label="知识点" min-width="140" />
-      <el-table-column prop="course" label="课程" width="110" />
+      <el-table-column prop="title" label="要点" min-width="140" />
+      <el-table-column prop="course" label="时期" width="110" />
       <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
-      <el-table-column prop="material_title" label="来源资料" width="150">
+      <el-table-column prop="material_title" label="来源史料" width="150">
         <template #default="{ row }">{{ row.material_title || '—' }}</template>
       </el-table-column>
       <el-table-column prop="question_count" label="关联题目" width="90" />
@@ -24,10 +24,10 @@
     </el-table>
   </el-card>
 
-  <el-dialog v-model="dialogVisible" :title="form.id ? '编辑知识点' : '新建知识点'" width="520px">
+  <el-dialog v-model="dialogVisible" :title="form.id ? '编辑要点' : '新建要点'" width="520px">
     <el-form label-width="80px">
       <el-form-item label="标题"><el-input v-model="form.title" /></el-form-item>
-      <el-form-item label="课程"><el-input v-model="form.course" placeholder="如：人工智能" /></el-form-item>
+      <el-form-item label="时期"><el-input v-model="form.course" placeholder="如：秦 / 北宋 / 世界近代" /></el-form-item>
       <el-form-item label="描述"><el-input v-model="form.description" type="textarea" :rows="3" /></el-form-item>
       <el-form-item label="来源资料">
         <el-select v-model="form.material_id" clearable placeholder="可选：关联一份资料" style="width:100%">

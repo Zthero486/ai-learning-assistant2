@@ -2,11 +2,11 @@
   <el-card class="page-card">
     <template #header>
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <span>课程资料库</span>
+        <span>史料与笔记</span>
         <div>
-          <el-input v-model="courseFilter" placeholder="按课程筛选" style="width:160px;margin-right:8px" clearable @change="load" />
+          <el-input v-model="courseFilter" placeholder="按时期筛选" style="width:160px;margin-right:8px" clearable @change="load" />
           <el-upload :show-file-list="false" :before-upload="doUpload" accept=".pdf,.docx,.md,.markdown,.txt">
-            <el-button type="primary" :loading="uploading">导入资料（PDF/Word/MD/TXT）</el-button>
+            <el-button type="primary" :loading="uploading">导入史料/笔记（PDF/Word/MD/TXT）</el-button>
           </el-upload>
         </div>
       </div>
@@ -14,7 +14,7 @@
     <el-table :data="materials" v-loading="loading">
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column prop="title" label="标题" min-width="160" />
-      <el-table-column prop="course" label="课程" width="120" />
+      <el-table-column prop="course" label="时期" width="120" />
       <el-table-column prop="filetype" label="类型" width="90" />
       <el-table-column prop="chars" label="字数" width="100" />
       <el-table-column prop="created_at" label="导入时间" width="170" />

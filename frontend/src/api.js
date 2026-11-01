@@ -119,4 +119,16 @@ export default {
   // 手动备份：下载/读取 JSON 文件（<a> 下载带不了请求头，走 fetch+blob）
   downloadSyncFile: () =>
     downloadFile('/api/sync/export', `学习数据备份-${new Date().toISOString().slice(0, 10)}.json`),
+  // 历史事件与时间轴
+  events: (params = {}) => {
+    const qs = new URLSearchParams()
+    if (params.era) qs.set('era', params.era)
+    if (params.kp_id) qs.set('kp_id', params.kp_id)
+    const q = qs.toString()
+    return request(`/api/events${q ? `?${q}` : ''}`)
+  },
+  eventCreate: (body) => request('/api/events', { method: 'POST', body: JSON.stringify(body) }),
+  eventUpdate: (id, body) => request(`/api/events/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  eventDelete: (id) => request(`/api/events/${id}`, { method: 'DELETE' }),
+  timeline: (era = '') => request(`/api/timeline${era ? `?era=${encodeURIComponent(era)}` : ''}`),
 }

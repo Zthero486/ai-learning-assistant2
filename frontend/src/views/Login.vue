@@ -1,7 +1,7 @@
 <template>
   <div class="login-wrap">
     <el-card class="login-card">
-      <div class="brand">📘 AI 学习助手</div>
+      <div class="brand">📜 历史学习助手</div>
       <div class="sub">本地学习管理 · 数据只存在这台电脑上</div>
 
       <el-tabs v-model="tab" stretch>

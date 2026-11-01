@@ -143,6 +143,27 @@ def init_db() -> None:
             UNIQUE(question_id, user_id),
             FOREIGN KEY(question_id) REFERENCES questions(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS events(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
+            kp_id INTEGER,
+            title TEXT NOT NULL,
+            era TEXT NOT NULL DEFAULT '',
+            year INTEGER,
+            year_end INTEGER,
+            year_label TEXT NOT NULL DEFAULT '',
+            place TEXT NOT NULL DEFAULT '',
+            people TEXT NOT NULL DEFAULT '',
+            cause TEXT NOT NULL DEFAULT '',
+            process TEXT NOT NULL DEFAULT '',
+            impact TEXT NOT NULL DEFAULT '',
+            significance TEXT NOT NULL DEFAULT '',
+            tags TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(kp_id) REFERENCES knowledge_points(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_events_year ON events(user_id, year);
+        CREATE INDEX IF NOT EXISTS idx_events_era ON events(user_id, era);
         """)
     conn.commit()
     # 顺序：先补 uuid 列（demo 插入要用）→ 保证 users.id=1 → 再做 user_id 迁移
@@ -150,6 +171,7 @@ def init_db() -> None:
     migrate_uuid(conn)
     ensure_demo_user(conn)
     migrate_legacy(conn)
+    migrate_history(conn)
     conn.close()
 
 
@@ -160,6 +182,7 @@ USER_TABLES = (
     "questions",
     "practice_records",
     "wrong_book",
+    "events",
 )
 
 
@@ -273,6 +296,36 @@ def migrate_uuid(conn: sqlite3.Connection) -> None:
             changed = True
     if changed:
         conn.commit()
+
+
+def migrate_history(conn: sqlite3.Connection) -> None:
+    """v1.3：给知识点补时间维度（朝代/起止年），让「知识点」能挂到时间轴上。
+
+    幂等。统一用 ALTER ADD COLUMN，不重建表。
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(knowledge_points)")}
+    if not cols:
+        return
+    added = False
+    for name, decl in (
+        ("era", "TEXT NOT NULL DEFAULT ''"),
+        ("year_start", "INTEGER"),
+        ("year_end", "INTEGER"),
+    ):
+        if name not in cols:
+            conn.execute(f"ALTER TABLE knowledge_points ADD COLUMN {name} {decl}")
+            added = True
+    if added:
+        conn.commit()
+
+
+def year_text(year: int | None, label: str = "") -> str:
+    """把整数年份渲染成史学写法：-221 -> 前221年，960 -> 960年。"""
+    if label:
+        return label
+    if year is None:
+        return ""
+    return f"前{abs(year)}年" if year < 0 else f"{year}年"
 
 
 def ensure_demo_user(conn: sqlite3.Connection) -> None:
@@ -701,6 +754,170 @@ def delete_task(tid: int, uid: int = Depends(require_user)):
     return {"deleted": tid}
 
 
+# ==================== 历史事件与时间轴（v1.3） ====================
+EVENT_COLUMNS = (
+    "title",
+    "era",
+    "year",
+    "year_end",
+    "year_label",
+    "place",
+    "people",
+    "cause",
+    "process",
+    "impact",
+    "significance",
+    "tags",
+)
+
+
+def _event_row(r: sqlite3.Row) -> dict:
+    """补上展示用的年份文本，前端不用再判断公元前。"""
+    d = dict(r)
+    d["year_text"] = year_text(d.get("year"), d.get("year_label") or "")
+    d["year_end_text"] = year_text(d.get("year_end")) if d.get("year_end") is not None else ""
+    return d
+
+
+@app.post("/api/events")
+def create_event(body: dict, uid: int = Depends(require_user)):
+    title = (body.get("title") or "").strip()
+    if not title:
+        raise HTTPException(400, "事件标题不能为空")
+    conn = db()
+    cur = conn.execute(
+        "INSERT INTO events(user_id,uuid,title,era,year,year_end,year_label,place,people,"
+        "cause,process,impact,significance,tags,kp_id,created_at)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            uid,
+            uuid.uuid4().hex,
+            title,
+            body.get("era", ""),
+            body.get("year"),
+            body.get("year_end"),
+            body.get("year_label", ""),
+            body.get("place", ""),
+            body.get("people", ""),
+            body.get("cause", ""),
+            body.get("process", ""),
+            body.get("impact", ""),
+            body.get("significance", ""),
+            body.get("tags", ""),
+            body.get("kp_id"),
+            now(),
+        ),
+    )
+    eid = cur.lastrowid
+    conn.commit()
+    row = conn.execute("SELECT * FROM events WHERE id=? AND user_id=?", (eid, uid)).fetchone()
+    conn.close()
+    return _event_row(row)
+
+
+@app.get("/api/events")
+def list_events(era: str = "", kp_id: int = None, uid: int = Depends(require_user)):
+    conn = db()
+    sql = "SELECT * FROM events WHERE user_id=?"
+    params: list = [uid]
+    if era:
+        sql += " AND era=?"
+        params.append(era)
+    if kp_id:
+        sql += " AND kp_id=?"
+        params.append(kp_id)
+    # 年份未知的排最后；公元前为负数，天然排在最前
+    sql += " ORDER BY year IS NULL, year, id"
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+    return [_event_row(r) for r in rows]
+
+
+@app.put("/api/events/{eid}")
+def update_event(eid: int, body: dict, uid: int = Depends(require_user)):
+    sets, params = [], []
+    for col in EVENT_COLUMNS:
+        if col in body:
+            sets.append(f"{col}=?")
+            params.append(body[col])
+    if not sets:
+        raise HTTPException(400, "没有可更新的字段")
+    if "kp_id" in body:
+        sets.append("kp_id=?")
+        params.append(body["kp_id"])
+    conn = db()
+    cur = conn.execute(
+        f"UPDATE events SET {','.join(sets)} WHERE id=? AND user_id=?",
+        (*params, eid, uid),
+    )
+    changed = cur.rowcount
+    conn.commit()
+    row = conn.execute("SELECT * FROM events WHERE id=? AND user_id=?", (eid, uid)).fetchone()
+    conn.close()
+    if not changed:
+        raise HTTPException(404, "事件不存在")
+    return _event_row(row)
+
+
+@app.delete("/api/events/{eid}")
+def delete_event(eid: int, uid: int = Depends(require_user)):
+    conn = db()
+    cur = conn.execute("DELETE FROM events WHERE id=? AND user_id=?", (eid, uid))
+    changed = cur.rowcount
+    conn.commit()
+    conn.close()
+    if not changed:
+        raise HTTPException(404, "事件不存在")
+    return {"deleted": eid}
+
+
+@app.get("/api/timeline")
+def get_timeline(era: str = "", uid: int = Depends(require_user)):
+    """时间轴聚合：时期分段 + 事件 + 挂到年份上的知识点。"""
+    conn = db()
+    sql = "SELECT * FROM events WHERE user_id=?"
+    params: list = [uid]
+    if era:
+        sql += " AND era=?"
+        params.append(era)
+    sql += " ORDER BY year IS NULL, year, id"
+    events = [_event_row(r) for r in conn.execute(sql, params).fetchall()]
+
+    eras = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT era, MIN(year) AS start, MAX(COALESCE(year_end, year)) AS end, COUNT(*) AS n"
+            " FROM events WHERE user_id=? AND era<>'' AND year IS NOT NULL"
+            " GROUP BY era ORDER BY start",
+            (uid,),
+        ).fetchall()
+    ]
+    kps = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT id,title,course,era,year_start,year_end FROM knowledge_points"
+            " WHERE user_id=? AND year_start IS NOT NULL ORDER BY year_start",
+            (uid,),
+        ).fetchall()
+    ]
+    conn.close()
+
+    span = {"start": None, "end": None}
+    if events:
+        years = [e["year"] for e in events if e["year"] is not None]
+        ends = [e["year_end"] for e in events if e["year_end"] is not None]
+        if years:
+            # 单点事件也有年份，跨年事件才看 year_end，两者都要参与
+            span = {"start": min(years), "end": max(years + ends)}
+    return {
+        "events": events,
+        "eras": eras,
+        "knowledge_points": kps,
+        "span": span,
+        "counts": {"events": len(events), "eras": len(eras)},
+    }
+
+
 # ==================== 练习与错题 ====================
 @app.post("/api/questions/generate")
 def generate_questions(body: dict, uid: int = Depends(require_user)):
@@ -726,10 +943,12 @@ def generate_questions(body: dict, uid: int = Depends(require_user)):
     if ai_helper.is_available() and content:
         try:
             raw = ai_helper.call_llm(
-                "你是出题助手。根据给定资料出简答题，只输出 JSON 数组，"
-                '每项 {"type":"short_answer","question":"...","answer":"..."}，'
-                f"共 {num} 题，题目必须能从资料中找到答案。",
-                f"知识点：{kp['title']}\n资料：\n{build_context(ai_helper.chunk_text(content, CHUNK_SIZE))}",
+                "你是高中历史教师，负责命制史料题。请基于给定史料/课文出题，题型从"
+                "「名词解释」「时间排序」「因果分析」「史料解读」「论述」中选取，尽量覆盖多种题型。"
+                "史料解读题必须引用材料原文片段，并问「反映了什么」「作者的立场」「该史料的史料价值」。"
+                '只输出 JSON 数组，每项 {"type":"题型","question":"题干","answer":"参考答案"}，'
+                f"共 {num} 题；答案必须能在材料中找到依据或符合史学共识，不得编造史实。",
+                f"知识点：{kp['title']}\n史料：\n{build_context(ai_helper.chunk_text(content, CHUNK_SIZE))}",
             )
             questions = ai_helper.parse_questions_json(raw)
         except Exception:
@@ -1269,8 +1488,10 @@ def ai_summarize(body: dict, uid: int = Depends(require_user)):
         chunks = ai_helper.chunk_text(row["content"], CHUNK_SIZE)
         try:
             text = ai_helper.call_llm(
-                "你是学习助手。请用中文对以下课程资料做结构化总结："
-                "先给 3~5 条要点，再给一段 100 字以内的概览。基于资料本身，不要编造。",
+                "你是历史学科助教。对以下史料/课文做结构化整理，六部分依次输出："
+                "① 时间与空间定位（朝代、年代、地域）；② 关键人物与事件；③ 背景与原因；"
+                "④ 经过与结果；⑤ 影响与评价；⑥ 三条可直接背诵的结论。"
+                "只依据给定文本，不得编造史实；文本未提到的信息明确写「材料未涉及」。",
                 build_context(chunks),
             )
             return {"mode": "ai", "summary": text}
@@ -1299,9 +1520,11 @@ def ai_ask(body: dict, uid: int = Depends(require_user)):
         context = build_context(ai_helper.search_chunks(question, chunks, top_k=5) or chunks)
         try:
             text = ai_helper.call_llm(
-                "你是学习助手。仅依据下面提供的课程资料片段回答问题；"
-                "资料中没有依据时明确说明无法从资料中得出。用中文回答，条理清晰。\n\n"
-                f"资料片段：\n{context}",
+                "你是历史学科助教。仅依据下面提供的史料片段回答问题；"
+                "回答时区分「史料记载」与「史家推论」，涉及评价需说明依据的标准。"
+                "史料中没有依据时明确说明无法从材料得出，不要用教科书常识代替材料。"
+                "用中文回答，条理清晰。\n\n"
+                f"史料片段：\n{context}",
                 f"问题：{question}",
             )
             return {"mode": "ai", "answer": text}
@@ -1329,8 +1552,9 @@ def ai_weak_analysis(body: dict, uid: int = Depends(require_user)):
         chunks = course_chunks(course or "未分类", uid) or course_chunks(weak_kps[0]["course"], uid)
         try:
             text = ai_helper.call_llm(
-                "你是学习教练。学生以下知识点练习正确率低于 60%，请结合课程资料给出："
-                "1) 每个薄弱点可能的成因；2) 针对性的复习建议与练习计划（列出具体步骤）。",
+                "你是历史学科的复习教练。学生以下史实要点练习正确率低于 60%，请结合史料给出："
+                "1) 每个薄弱点的失分类型（史实记忆不牢 / 时序混乱 / 因果颠倒 / 史料解读偏差 / 概念混淆）；"
+                "2) 针对该失分类型的复习动作与自测题（列出具体步骤和可检验的结果）。",
                 f"薄弱知识点：{weak_titles}\n\n课程资料片段：\n{build_context(chunks) if chunks else '（无资料）'}",
             )
             return {"mode": "ai", "weak_kps": weak_kps, "advice": text}

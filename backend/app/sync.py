@@ -21,6 +21,7 @@ CHAIN = (
     "practice_records",
     "wrong_book",
     "tasks",
+    "events",
 )
 
 PAYLOAD_VERSION = 1
@@ -49,7 +50,8 @@ def build_export(conn: sqlite3.Connection) -> dict:
             FROM materials m JOIN users u ON u.id = m.user_id"""),
         "knowledge_points": rows("""
             SELECT k.uuid, u.uuid AS owner, m.uuid AS material_uuid,
-                   k.course, k.title, k.description, k.created_at
+                   k.course, k.title, k.description, k.era, k.year_start, k.year_end,
+                   k.created_at
             FROM knowledge_points k
             JOIN users u ON u.id = k.user_id
             LEFT JOIN materials m ON m.id = k.material_id"""),
@@ -77,6 +79,13 @@ def build_export(conn: sqlite3.Connection) -> dict:
             FROM tasks t
             JOIN users u ON u.id = t.user_id
             LEFT JOIN knowledge_points k ON k.id = t.kp_id"""),
+        "events": rows("""
+            SELECT e.uuid, u.uuid AS owner, k.uuid AS kp_uuid,
+                   e.title, e.era, e.year, e.year_end, e.year_label, e.place, e.people,
+                   e.cause, e.process, e.impact, e.significance, e.tags, e.created_at
+            FROM events e
+            JOIN users u ON u.id = e.user_id
+            LEFT JOIN knowledge_points k ON k.id = e.kp_id"""),
     }
     payload["counts"] = {k: len(v) for k, v in payload.items() if isinstance(v, list)}
     return payload
@@ -189,7 +198,8 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
         if not r.get("uuid") or uuid_exists("knowledge_points", r["uuid"]):
             continue
         conn.execute(
-            "INSERT INTO knowledge_points(user_id,uuid,material_id,course,title,description,created_at) VALUES(?,?,?,?,?,?,?)",
+            "INSERT INTO knowledge_points(user_id,uuid,material_id,course,title,description,"
+            "era,year_start,year_end,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
             (
                 resolve_user(r["owner"]),
                 r["uuid"],
@@ -197,6 +207,9 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
                 r.get("course", "未分类"),
                 r["title"],
                 r.get("description", ""),
+                r.get("era", ""),
+                r.get("year_start"),
+                r.get("year_end"),
                 r.get("created_at", ""),
             ),
         )
@@ -295,6 +308,35 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
             ),
         )
         stats["tasks"] += 1
+
+    # 8. events（历史事件，kp 引用不存在时置空仍保留事件本身）
+    for r in payload.get("events", []):
+        if not r.get("uuid") or uuid_exists("events", r["uuid"]):
+            continue
+        conn.execute(
+            "INSERT INTO events(user_id,uuid,kp_id,title,era,year,year_end,year_label,place,"
+            "people,cause,process,impact,significance,tags,created_at)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                resolve_user(r["owner"]),
+                r["uuid"],
+                null_fk(kp_map, r.get("kp_uuid")),
+                r["title"],
+                r.get("era", ""),
+                r.get("year"),
+                r.get("year_end"),
+                r.get("year_label", ""),
+                r.get("place", ""),
+                r.get("people", ""),
+                r.get("cause", ""),
+                r.get("process", ""),
+                r.get("impact", ""),
+                r.get("significance", ""),
+                r.get("tags", ""),
+                r.get("created_at", ""),
+            ),
+        )
+        stats["events"] += 1
 
     conn.commit()
     conn.execute("PRAGMA foreign_keys=ON")
