@@ -196,6 +196,12 @@ def test_connection() -> dict:
             404: "接口地址或模型名不存在，请核对 AI_BASE_URL / AI_MODEL",
             429: "触发速率限制（免费额度常见），稍后重试",
         }.get(code, "请核对配置")
+        if code == 403 and "free tier" in (e.response.text or "")[:2000].lower():
+            hint = (
+                "该 key 的 Gemini 免费额度已被 Google 停用（提示需开通付费）——"
+                "要么到 aistudio.google.com/billing 绑卡开通，要么换国内平台"
+                "（智谱 GLM-4-Flash 永久免费，在「配置 API Key」里切换预设即可）"
+            )
         return {
             "ok": False,
             "reason": f"http_{code}",

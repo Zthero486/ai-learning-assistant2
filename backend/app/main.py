@@ -946,7 +946,12 @@ def generate_questions(body: dict, uid: int = Depends(require_user)):
         content = row["content"] if row else ""
     conn.close()
 
-    if ai_helper.is_available() and content:
+    # 没关联史料时退回要点描述/标题：AI 凭史学共识仍可出题，不必强绑材料
+    context = content or (kp["description"] or "") or kp["title"]
+    reason = None
+    if not ai_helper.is_available():
+        questions, source, reason = [], "fallback", "no_key"
+    else:
         try:
             raw = ai_helper.call_llm(
                 "你是高中历史教师，负责命制史料题。请基于给定史料/课文出题，题型从"
@@ -957,15 +962,12 @@ def generate_questions(body: dict, uid: int = Depends(require_user)):
                 f"知识点：{kp['title']}\n史料：\n{build_context(ai_helper.chunk_text(content, CHUNK_SIZE))}",
             )
             questions = ai_helper.parse_questions_json(raw)
+            source = "ai"
         except Exception:
-            questions = []
-        source = "ai"
-    else:
-        questions = []
-        source = "fallback"
+            questions, source, reason = [], "fallback", "ai_error"
 
     if not questions:
-        questions = ai_helper.fallback_questions(kp["title"], content or kp["title"], num)
+        questions = ai_helper.fallback_questions(kp["title"], context, num)
         source = "fallback"
 
     conn = db()
@@ -987,7 +989,7 @@ def generate_questions(body: dict, uid: int = Depends(require_user)):
         ids.append(cur.lastrowid)
     conn.commit()
     conn.close()
-    return {"generated": len(ids), "source": source}
+    return {"generated": len(ids), "source": source, "reason": reason}
 
 
 PERSONAL_MAX_WRONG = 8  # 一次个性化出题最多参考多少条错题

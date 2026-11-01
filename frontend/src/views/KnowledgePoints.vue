@@ -91,8 +91,10 @@ async function genQuestions(row) {
     const r = await api.generateQuestions({ kp_id: row.id, num: 5 })
     if (r.source === 'ai') {
       ElMessage.success(`大模型生成了 ${r.generated} 道题`)
+    } else if (r.reason === 'ai_error') {
+      ElMessage.warning(`AI 调用失败（网络/接口问题），已用规则引擎兜底生成 ${r.generated} 道题`)
     } else {
-      ElMessage.warning(`规则引擎生成了 ${r.generated} 道题（未配置 AI key）`)
+      ElMessage.warning(`规则引擎生成了 ${r.generated} 道题（未配置 AI key，可在「AI 助手」页配置）`)
     }
   } catch (e) {
     ElMessage.error(e.message)
