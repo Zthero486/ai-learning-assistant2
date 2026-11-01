@@ -4,7 +4,56 @@
 
 ![status](https://img.shields.io/badge/version-v1.0--naive-blue) ![python](https://img.shields.io/badge/python-3.10+-green) ![node](https://img.shields.io/badge/node-18+-green)
 
-> 📌 **协作成员请先读：[协作看板](docs/协作看板.md)** —— 谁做什么、做到哪一步，全部以看板为准，不看群聊不看口头。
+> 📌 **协作成员请先读：[同学上手指南](docs/同学上手指南.md)**（clone / 装依赖 / 启动 / 每日同步节奏，10 分钟跑通），任务分工以[协作看板](docs/协作看板.md)为准 —— 不看群聊不看口头。
+
+## 仓库与分支
+
+```
+https://github.com/qianxingzhigui/ai-learning-assistant2
+```
+
+| 分支 | 用途 |
+| --- | --- |
+| `develop`（**默认分支**） | 日常开发主干，`git clone` 后就在这里，改动直接推这里 |
+| `master` | 发布快照，只接受 PR，内容跟随 `develop` |
+| `refactor-v2` | 历史遗留，已并入 develop，勿用 |
+
+> `develop` 无分支保护，协作者可直接 push；`master` 要求 PR + 1 人 review。
+
+## 快速开始
+
+```bash
+git clone https://github.com/qianxingzhigui/ai-learning-assistant2.git
+cd ai-learning-assistant2
+
+# 1. 后端
+cd backend
+python -m pip install -r requirements.txt
+# 可选：想要 AI 能力再执行（不配也能跑，会自动降级为规则引擎）
+#   Windows:  copy .env.example .env
+#   bash:     cp .env.example .env
+uvicorn app.main:app --reload --port 8000
+
+# 2. 前端（另开终端）
+cd frontend
+npm install
+npm run dev
+```
+
+浏览器打开 <http://127.0.0.1:5173>，演示账号 `demo` / `demo123`。
+
+Windows 下可直接双击 `scripts/start_all.bat` 一键启动。
+
+### 日常同步（每次开工/收工）
+
+```bash
+git pull --no-rebase origin develop    # 开工前
+cd backend && python -m pytest -q      # 提交前，必须全绿
+git add -A && git commit -m "feat: ..." && git push origin develop
+```
+
+远端有分歧一律用 `git merge`，**不要 `git rebase`**（本环境会卡中间态）。
+
 
 ## 功能总览
 
@@ -24,23 +73,7 @@
 - **前端**：Vue 3 + Element Plus + Vite
 - **AI**：OpenAI 兼容协议（智谱 GLM / 硅基流动 / DeepSeek / 通义千问 均可，切换只改 `.env` 三行）；文档解析 pypdf / python-docx
 
-## 快速开始
-
-```bash
-# 1. 后端
-cd backend
-python -m pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-
-# 2. 前端（另开终端）
-cd frontend
-npm install
-npm run dev
-```
-
-Windows 下可直接双击 `scripts/start_all.bat` 一键启动。
-
-### 打包成便携版（免安装，双击即用）
+## 打包成便携版（免安装，双击即用）
 
 想给不使用开发环境的电脑用（答辩现场、拷给同学），执行：
 
@@ -50,7 +83,7 @@ python scripts/build_portable.py
 
 产物在 `release/` 目录：**双击 `AILearningAssistant.exe` 即可运行**，自动启动服务并打开界面；数据保存在 exe 同级的 `data/` 目录，整个文件夹可整体拷贝到其他电脑。详见[打包与发布说明](docs/打包发布说明.md)。
 
-### 配置 AI（可选，有免费方案）
+## 配置 AI（可选，有免费方案）
 
 **方式一：在软件里配置（推荐，免改文件）**
 打开「AI 助手」页 → 点「配置 API Key」→ 选平台预设 → 粘贴 Key → 保存并生效 → 点「检测 AI 连接」验证。
@@ -58,7 +91,7 @@ python scripts/build_portable.py
 
 **方式二：手工编辑 `.env`**（复制 `backend/.env.example` 为 `backend/.env`）
 
-三家免费平台任选，代码无需改动：
+平台任选，代码无需改动：
 
 | 平台 | 免费情况 | AI_BASE_URL | AI_MODEL |
 | --- | --- | --- | --- |
@@ -88,13 +121,14 @@ ai-learning-assistant/
 │   ├── app/          # 应用代码
 │   └── tests/        # pytest 测试
 ├── frontend/         # Vue3 前端
-├── scripts/          # 一键启动脚本
-├── docs/             # 设计文档 / 用户手册
+├── scripts/          # 启动 / 打包 / 灌数据脚本
+├── docs/             # 上手、协作、打包、日志
 └── .github/          # CI、issue/PR 模板
 ```
 
 ## 文档
 
+- [**同学上手指南**（clone → 装依赖 → 启动 → 每日同步，10 分钟跑通）](docs/同学上手指南.md)
 - [**协作看板**（任务分派与进度，成员每日必看）](docs/协作看板.md)
 - [**协作自动化**（任务如何自动通知到人，不用口头转述）](docs/协作自动化.md)
 - [贡献指南与代码规范](CONTRIBUTING.md)
