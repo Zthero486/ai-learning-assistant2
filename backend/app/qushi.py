@@ -14,8 +14,10 @@ import uuid
 from pathlib import Path
 
 DATA_FILE = Path(__file__).with_name("seed_data") / "qushi.json"
+CONTENT_FILE = Path(__file__).with_name("seed_data") / "qushi_content.json"
 
 _CACHE = None
+_CONTENT = None
 
 # 事件种类 → 中文标签
 KIND_LABEL = {
@@ -27,11 +29,36 @@ KIND_LABEL = {
 CN_NUM = "一二三四五六七八九十"
 
 
+def content() -> dict:
+    """扩充内容包：追加事件、内置史料、知识点样例题（缺失时返回空骨架）。"""
+    global _CONTENT
+    if _CONTENT is None:
+        try:
+            _CONTENT = json.loads(CONTENT_FILE.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            _CONTENT = {"events": [], "materials": [], "kps": []}
+    return _CONTENT
+
+
 def load() -> dict:
     global _CACHE
     if _CACHE is None:
-        _CACHE = json.loads(DATA_FILE.read_text(encoding="utf-8"))
+        data = json.loads(DATA_FILE.read_text(encoding="utf-8"))
+        extra = content().get("events") or []
+        if extra:
+            data["events"] = list(data["events"]) + list(extra)
+        _CACHE = data
     return _CACHE
+
+
+def builtin_materials() -> list:
+    """内置史料：[{track,title,content}, ...]。"""
+    return content().get("materials") or []
+
+
+def builtin_kps() -> list:
+    """内置知识点样例：[{node_code,title,description,exam_type,question{type,q,a}}, ...]。"""
+    return content().get("kps") or []
 
 
 def tracks() -> list:
