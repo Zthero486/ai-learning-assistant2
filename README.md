@@ -95,17 +95,22 @@ python scripts/build_portable.py
 
 | 平台 | 免费情况 | AI_BASE_URL | AI_MODEL |
 | --- | --- | --- | --- |
-| **智谱 GLM（国内推荐）** | GLM-4-Flash 永久免费，128K 上下文 | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` |
-| **Google Gemini** | 有免费额度，需代理 | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-3-flash-preview` |
+| **阶跃星辰 StepFun（国内推荐）** | 有免费/活动额度，OpenAI 兼容 | `https://api.stepfun.com/v1` | `step-3.5-flash` |
+| **智谱 GLM（国内可用）** | GLM-4-Flash 永久免费，128K 上下文 | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` |
+| **Google Gemini** | 新项目免费档已被 Google 停用（403），需绑卡 | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-3-flash-preview` |
+| MiniMax | 需 M 系列订阅 | `https://api.minimax.cn/v1` | `MiniMax-M3.1-Flash` |
 | 硅基流动 | 9B 以下模型永久免费 | `https://api.siliconflow.cn/v1` | `Qwen/Qwen2.5-7B-Instruct` |
 | 阿里云百炼 | 新用户百万级 Token（约 90 天） | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-turbo` |
 | DeepSeek（付费） | 便宜、推理强 | `https://api.deepseek.com` | `deepseek-chat` |
 
 ```
 AI_API_KEY=你的key
-AI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-AI_MODEL=glm-4-flash
+AI_BASE_URL=https://api.stepfun.com/v1
+AI_MODEL=step-3.5-flash
 ```
+
+> 阶跃有两条路径：`/v1` 按量计费可直接用；`/step_plan/v1` 需要有效的 Step Plan 订阅，
+> 否则返回 400 `no active step plan subscription`，不确定时用 `/v1`。
 
 > 走 Google 等境外接口时多配一行 `AI_PROXY=http://127.0.0.1:7897`（按自己代理端口改）；
 > 不填则自动读取系统代理与 `HTTPS_PROXY` 环境变量。国内平台留空即可。
