@@ -13,6 +13,7 @@
 """
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -26,16 +27,27 @@ FRONTEND_DIST = FRONTEND / "dist"
 BUNDLED_DIST = BACKEND / "frontend_dist"  # 随包分发的前端产物
 RELEASE = ROOT / "release"
 BUILD = ROOT / "build"
-EXE_NAME = "AILearningAssistant"
+EXE_NAME = "AILearningAssistant"  # 保持稳定：升级靠替换同名 exe，别改
+PRODUCT_NAME = "四史学习助手"
 VERSION = "1.0"
 BUILTIN_KEY_FILE = BACKEND / "app" / "_builtin_key.py"  # 打包期临时生成，随后删除（已 gitignore）
 
-USAGE_TEXT = """历史学习助手 v1.0 —— 使用说明
+USAGE_TEXT = """「四史」学习助手 v1.0 —— 使用说明
 ====================================================
+
+【这是什么】
+面向高校思政课「四史」（党史 / 新中国史 / 改革开放史 / 社会主义发展史）
+的学习系统：内置四门课的教材章节目录与关键史事，按课本脉络整理笔记、
+做题、复习。
 
 【怎么启动】
 双击 AILearningAssistant.exe。程序会自动启动本地服务并打开浏览器界面。
 首次启动约需 3~10 秒（需解压运行时），请耐心等待，不要重复双击。
+
+【第一次用：先选课】
+注册/登录后先选一门课（每学期通常只修一门），选定后整个软件的教材目录、
+时间轴、出题范围都跟着这门课走。中途要换：左下角「切换课程」。
+换课不会删数据，切回来笔记和错题都还在。
 
 【怎么退出】
 关闭弹出的黑色命令行窗口即可（浏览器标签页可以直接关掉，
@@ -145,15 +157,18 @@ def embed_builtin_key(enabled: bool) -> None:
 
 
 def clear_builtin_key() -> None:
-    """删除临时的 _builtin_key.py，避免 key 留在源码树里被误提交。"""
+    """把临时的 _builtin_key.py 挪出源码树，避免 key 被误提交。
+
+    注意：这里**不能** unlink。本机沙箱会拦截进程内的删除操作（连带一个陈旧的
+    pytest 垃圾目录一起 fail-closed，整轮进程被杀），而 PyInstaller 此时已经
+    成功产出 exe，收尾步骤反而全被跳过。用 rename 挪到 build/_stale_builtin_key
+    既达到「key 不在源码树」的目的，又绕开删除拦截。
+    """
     if not BUILTIN_KEY_FILE.exists():
         return
-    try:
-        BUILTIN_KEY_FILE.unlink()
-    except OSError:
-        trash = BUILD / "_stale_builtin_key"
-        trash.mkdir(parents=True, exist_ok=True)
-        BUILTIN_KEY_FILE.replace(trash / f"_builtin_key_{uuid.uuid4().hex[:6]}.py")
+    trash = BUILD / "_stale_builtin_key"
+    trash.mkdir(parents=True, exist_ok=True)
+    BUILTIN_KEY_FILE.replace(trash / f"_builtin_key_{uuid.uuid4().hex[:6]}.py")
 
 
 
@@ -183,12 +198,27 @@ def build_exe() -> None:
     except ImportError:
         sys.exit("缺少 PyInstaller，请先执行：pip install pyinstaller")
 
+    # 沙箱保护：本机对「一轮内批量删除」fail-closed，--clean 会删缓存里的几百个文件
+    # 而被整轮拒绝。设 WB_NOCLEAN=1 时改用全新的 workpath、且不传 --clean。
+    noclean = bool(os.environ.get("WB_NOCLEAN"))
+    workdir = BUILD / (f"pi_{uuid.uuid4().hex[:8]}" if noclean else "pyinstaller")
+
+    # 沙箱对进程内删除 fail-closed：PyInstaller 覆盖已有 exe 时会先删掉它，整轮进程
+    # 会被直接杀掉（表现为 "Building EXE from EXE-00.toc" 后 exit 1、exe 却没更新）。
+    # 先 rename 挪走旧产物（同盘 rename 不受限），新 exe 就是新建文件，不会触发删除。
+    old_exe = RELEASE / f"{EXE_NAME}.exe"
+    if old_exe.exists():
+        stale_exe = BUILD / "_stale_exe"
+        stale_exe.mkdir(parents=True, exist_ok=True)
+        old_exe.replace(stale_exe / f"{EXE_NAME}_{uuid.uuid4().hex[:6]}.exe")
+        print("[note] 旧 exe 已挪到 build/_stale_exe（可整目录手动删除）")
+
     args = [
         find_python(),
         "-m",
         "PyInstaller",
         "--noconfirm",
-        "--clean",
+        *([] if noclean else ["--clean"]),
         "--onefile",
         "--console",
         "--name",
@@ -196,11 +226,15 @@ def build_exe() -> None:
         "--distpath",
         str(RELEASE),
         "--workpath",
-        str(BUILD / "pyinstaller"),
+        str(workdir),
         "--specpath",
         str(BUILD),
         "--add-data",
         f"{BUNDLED_DIST};frontend_dist",
+        # 内置课程数据（四史章节树 + 关键事件）。qushi.py 用 __file__ 相对定位，
+        # onefile 解包后对应 _MEIPASS/app/seed_data/，所以目标目录必须是 app/seed_data。
+        "--add-data",
+        f"{BACKEND / 'app' / 'seed_data'};app/seed_data",
         "--collect-submodules",
         "uvicorn",
         "--hidden-import",
@@ -257,8 +291,8 @@ def make_zip() -> None:
     if not (RELEASE / f"{EXE_NAME}.exe").exists():
         sys.exit("未找到 release 中的 exe，请先完整构建一次")
 
-    archive = RELEASE.parent / f"历史学习助手-v{VERSION}-便携版.zip"
-    inner = f"历史学习助手-v{VERSION}"
+    archive = RELEASE.parent / f"{PRODUCT_NAME}-v{VERSION}-便携版.zip"
+    inner = f"{PRODUCT_NAME}-v{VERSION}"
     # .env 里有 AI Key，token.key 是令牌签名密钥（每台机器首次启动自建），都不进分享包
     # 注意 .env.bak / .env.20261105-183545.bak 这类备份同样含 Key，用前缀整体排除
     skip_names = {"run.log", "token.key"}

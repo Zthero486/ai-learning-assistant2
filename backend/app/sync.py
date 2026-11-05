@@ -35,7 +35,7 @@ def _uuid(row) -> str:
 def build_export(conn: sqlite3.Connection) -> dict:
     """全量导出当前库（数据量级：个人学习记录，几十 KB，全量即可不用增量）。"""
     users = conn.execute(
-        "SELECT uuid, username, password_hash, salt, display_name, created_at FROM users"
+        "SELECT uuid, username, password_hash, salt, display_name, track, created_at FROM users"
     ).fetchall()
 
     def rows(sql):
@@ -51,13 +51,13 @@ def build_export(conn: sqlite3.Connection) -> dict:
         "knowledge_points": rows("""
             SELECT k.uuid, u.uuid AS owner, m.uuid AS material_uuid,
                    k.course, k.title, k.description, k.era, k.year_start, k.year_end,
-                   k.created_at
+                   k.node_code, k.exam_type, k.created_at
             FROM knowledge_points k
             JOIN users u ON u.id = k.user_id
             LEFT JOIN materials m ON m.id = k.material_id"""),
         "questions": rows("""
             SELECT q.uuid, u.uuid AS owner, k.uuid AS kp_uuid,
-                   q.type, q.question, q.answer, q.source, q.created_at
+                   q.type, q.question, q.answer, q.source, q.exam_type, q.created_at
             FROM questions q
             JOIN users u ON u.id = q.user_id
             LEFT JOIN knowledge_points k ON k.id = q.kp_id"""),
@@ -69,7 +69,8 @@ def build_export(conn: sqlite3.Connection) -> dict:
             JOIN questions q ON q.id = p.question_id"""),
         "wrong_book": rows("""
             SELECT w.uuid, u.uuid AS owner, q.uuid AS question_uuid,
-                   w.wrong_count, w.resolved, w.review_marked, w.last_wrong_at
+                   w.wrong_count, w.resolved, w.review_marked, w.last_wrong_at,
+                   w.next_review_at, w.error_type
             FROM wrong_book w
             JOIN users u ON u.id = w.user_id
             JOIN questions q ON q.id = w.question_id"""),
@@ -82,7 +83,8 @@ def build_export(conn: sqlite3.Connection) -> dict:
         "events": rows("""
             SELECT e.uuid, u.uuid AS owner, k.uuid AS kp_uuid,
                    e.title, e.era, e.year, e.year_end, e.year_label, e.place, e.people,
-                   e.cause, e.process, e.impact, e.significance, e.tags, e.created_at
+                   e.cause, e.process, e.impact, e.significance, e.tags,
+                   e.kind, e.node_code, e.created_at
             FROM events e
             JOIN users u ON u.id = e.user_id
             LEFT JOIN knowledge_points k ON k.id = e.kp_id"""),
@@ -128,13 +130,14 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
                 uid_map[owner_uuid] = same_name["id"]
                 return same_name["id"]
             cur = conn.execute(
-                "INSERT INTO users(uuid,username,password_hash,salt,display_name,created_at) VALUES(?,?,?,?,?,?)",
+                "INSERT INTO users(uuid,username,password_hash,salt,display_name,track,created_at) VALUES(?,?,?,?,?,?,?)",
                 (
                     owner_uuid,
                     src["username"],
                     src["password_hash"],
                     src["salt"],
                     src.get("display_name", ""),
+                    src.get("track", ""),
                     src.get("created_at", ""),
                 ),
             )
@@ -160,13 +163,14 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
         if conn.execute("SELECT 1 FROM users WHERE username=?", (u["username"],)).fetchone():
             continue  # 同名并入，不建新号
         conn.execute(
-            "INSERT INTO users(uuid,username,password_hash,salt,display_name,created_at) VALUES(?,?,?,?,?,?)",
+            "INSERT INTO users(uuid,username,password_hash,salt,display_name,track,created_at) VALUES(?,?,?,?,?,?,?)",
             (
                 u_uuid,
                 u["username"],
                 u["password_hash"],
                 u["salt"],
                 u.get("display_name", ""),
+                u.get("track", ""),
                 u.get("created_at", ""),
             ),
         )
@@ -199,7 +203,7 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
             continue
         conn.execute(
             "INSERT INTO knowledge_points(user_id,uuid,material_id,course,title,description,"
-            "era,year_start,year_end,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            "era,year_start,year_end,node_code,exam_type,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 resolve_user(r["owner"]),
                 r["uuid"],
@@ -210,6 +214,8 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
                 r.get("era", ""),
                 r.get("year_start"),
                 r.get("year_end"),
+                r.get("node_code", ""),
+                r.get("exam_type", ""),
                 r.get("created_at", ""),
             ),
         )
@@ -222,7 +228,7 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
         if not r.get("uuid") or uuid_exists("questions", r["uuid"]):
             continue
         conn.execute(
-            "INSERT INTO questions(user_id,uuid,kp_id,type,question,answer,source,created_at) VALUES(?,?,?,?,?,?,?,?)",
+            "INSERT INTO questions(user_id,uuid,kp_id,type,question,answer,source,exam_type,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
             (
                 resolve_user(r["owner"]),
                 r["uuid"],
@@ -231,6 +237,7 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
                 r["question"],
                 r.get("answer", ""),
                 r.get("source", "manual"),
+                r.get("exam_type", ""),
                 r.get("created_at", ""),
             ),
         )
@@ -276,7 +283,8 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
             )
         else:
             conn.execute(
-                "INSERT INTO wrong_book(user_id,uuid,question_id,wrong_count,resolved,review_marked,last_wrong_at) VALUES(?,?,?,?,?,?,?)",
+                "INSERT INTO wrong_book(user_id,uuid,question_id,wrong_count,resolved,review_marked,"
+                "last_wrong_at,next_review_at,error_type) VALUES(?,?,?,?,?,?,?,?,?)",
                 (
                     owner,
                     r["uuid"],
@@ -285,6 +293,8 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
                     1 if r.get("resolved") else 0,
                     1 if r.get("review_marked") else 0,
                     r.get("last_wrong_at", ""),
+                    r.get("next_review_at", ""),
+                    r.get("error_type", ""),
                 ),
             )
             stats["wrong_book"] += 1
@@ -315,8 +325,8 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
             continue
         conn.execute(
             "INSERT INTO events(user_id,uuid,kp_id,title,era,year,year_end,year_label,place,"
-            "people,cause,process,impact,significance,tags,created_at)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "people,cause,process,impact,significance,tags,kind,node_code,created_at)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 resolve_user(r["owner"]),
                 r["uuid"],
@@ -333,6 +343,8 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
                 r.get("impact", ""),
                 r.get("significance", ""),
                 r.get("tags", ""),
+                r.get("kind", "event"),
+                r.get("node_code", ""),
                 r.get("created_at", ""),
             ),
         )

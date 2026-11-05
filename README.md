@@ -1,8 +1,12 @@
-# 历史学习助手
+# 四史学习助手
 
-> 面向历史学科的个人智能学习空间：史料笔记 → 史实要点 → 复习任务 → 自测 → 错题 → AI 分析，形成完整学习闭环；内置历史时间轴，可横向串联中外史事。
+> 面向高校「四史」课程（党史 / 新中国史 / 改革开放史 / 社会主义发展史）的个人学习空间：
+> **先选课 → 按教材章节建知识点 → 四史对照时间轴 → 检索练习 → 错题间隔复习**，形成完整学习闭环。
 
-![status](https://img.shields.io/badge/version-v1.0--naive-blue) ![python](https://img.shields.io/badge/python-3.10+-green) ![node](https://img.shields.io/badge/node-18+-green)
+![status](https://img.shields.io/badge/version-v2.0--qushi-blue) ![python](https://img.shields.io/badge/python-3.10+-green) ![node](https://img.shields.io/badge/node-18+-green)
+
+> **一个账号只学一门课**。注册后先选课（`/welcome`），此后教材目录、时间轴、史实要点、自测都只围绕这一门展开；
+> 侧栏「切换课程」可改选，旧数据不会删除。
 
 > 📌 **协作成员请先读：[同学上手指南](docs/同学上手指南.md)**（clone / 装依赖 / 启动 / 每日同步节奏，10 分钟跑通），任务分工以[协作看板](docs/协作看板.md)为准 —— 不看群聊不看口头。
 
@@ -40,7 +44,7 @@ npm install
 npm run dev
 ```
 
-浏览器打开 <http://127.0.0.1:5173>，演示账号 `demo` / `demo123`。
+浏览器打开 <http://127.0.0.1:5173>，演示账号 `demo` / `demo123`（已预设为「党史」）。
 
 Windows 下可直接双击 `scripts/start_all.bat` 一键启动。
 

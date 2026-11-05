@@ -116,7 +116,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import api from '../api'
+import api, { auth } from '../api'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -197,7 +197,7 @@ const groups = computed(() => {
 async function load() {
   loading.value = true
   try {
-    const data = await api.timeline(eraFilter.value || '')
+    const data = await api.timeline(eraFilter.value || '', auth.track())
     events.value = data.events
     eras.value = data.eras
     span.value = data.span || { start: null, end: null }

@@ -10,6 +10,17 @@ export const auth = {
   user: () => {
     try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null') } catch { return null }
   },
+  // 当前选中的那一门四史（party/prc/reform/socialism），空串 = 还没选课
+  track: () => {
+    try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null')?.track || '' } catch { return '' }
+  },
+  setTrack: (key) => {
+    try {
+      const u = JSON.parse(localStorage.getItem(USER_KEY) || 'null') || {}
+      u.track = key
+      localStorage.setItem(USER_KEY, JSON.stringify(u))
+    } catch { /* ignore */ }
+  },
   save: (token, user) => {
     localStorage.setItem(TOKEN_KEY, token)
     localStorage.setItem(USER_KEY, JSON.stringify(user))
@@ -67,6 +78,11 @@ export default {
   register: (body) => request('/api/auth/register', { method: 'POST', body: JSON.stringify(body) }),
   login: (body) => request('/api/auth/login', { method: 'POST', body: JSON.stringify(body) }),
   me: () => request('/api/auth/me'),
+  // 四史课程
+  tracks: () => request('/api/tracks'),
+  setTrack: (track) => request('/api/profile/track', { method: 'POST', body: JSON.stringify({ track }) }),
+  syllabus: (track) => request(`/api/syllabus${track ? `?track=${encodeURIComponent(track)}` : ''}`),
+  syllabusNode: (code) => request(`/api/syllabus/node/${encodeURIComponent(code)}`),
   // 资料
   listMaterials: (course) => request(`/api/materials${course ? `?course=${encodeURIComponent(course)}` : ''}`),
   getMaterial: (id) => request(`/api/materials/${id}`),
@@ -77,8 +93,16 @@ export default {
     return request('/api/materials/upload', { method: 'POST', body: fd })
   },
   deleteMaterial: (id) => request(`/api/materials/${id}`, { method: 'DELETE' }),
-  // 知识点
-  listKps: (course) => request(`/api/knowledge-points${course ? `?course=${encodeURIComponent(course)}` : ''}`),
+  // 知识点（兼容旧的 listKps('课程名') 写法）
+  listKps: (arg = {}) => {
+    const opt = typeof arg === 'string' ? { course: arg } : arg
+    const qs = new URLSearchParams()
+    if (opt.course) qs.set('course', opt.course)
+    if (opt.track) qs.set('track', opt.track)
+    if (opt.nodeCode) qs.set('node_code', opt.nodeCode)
+    const q = qs.toString()
+    return request(`/api/knowledge-points${q ? `?${q}` : ''}`)
+  },
   createKp: (body) => request('/api/knowledge-points', { method: 'POST', body: JSON.stringify(body) }),
   updateKp: (id, body) => request(`/api/knowledge-points/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteKp: (id) => request(`/api/knowledge-points/${id}`, { method: 'DELETE' }),
@@ -126,11 +150,18 @@ export default {
     const qs = new URLSearchParams()
     if (params.era) qs.set('era', params.era)
     if (params.kp_id) qs.set('kp_id', params.kp_id)
+    if (params.track) qs.set('track', params.track)
     const q = qs.toString()
     return request(`/api/events${q ? `?${q}` : ''}`)
   },
   eventCreate: (body) => request('/api/events', { method: 'POST', body: JSON.stringify(body) }),
   eventUpdate: (id, body) => request(`/api/events/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   eventDelete: (id) => request(`/api/events/${id}`, { method: 'DELETE' }),
-  timeline: (era = '') => request(`/api/timeline${era ? `?era=${encodeURIComponent(era)}` : ''}`),
+  timeline: (era = '', track = '') => {
+    const qs = new URLSearchParams()
+    if (era) qs.set('era', era)
+    if (track) qs.set('track', track)
+    const q = qs.toString()
+    return request(`/api/timeline${q ? `?${q}` : ''}`)
+  },
 }

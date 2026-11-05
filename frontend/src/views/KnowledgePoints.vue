@@ -45,7 +45,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import api from '../api'
+import api, { auth } from '../api'
 
 const kps = ref([])
 const materials = ref([])
@@ -56,7 +56,7 @@ const form = ref({ id: null, title: '', course: '未分类', description: '', ma
 async function load() {
   loading.value = true
   try {
-    kps.value = await api.listKps()
+    kps.value = await api.listKps({ track: auth.track() })
     materials.value = await api.listMaterials()
   } catch (e) {
     ElMessage.error(e.message)

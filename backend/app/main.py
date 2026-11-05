@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from pypdf import PdfReader
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import ai_helper, apppaths, auth
+from . import ai_helper, apppaths, auth, qushi
 from . import sync as sync_mod
 
 # ==================== v1 硬编码配置（v2 重构目标：统一配置中心） ====================
@@ -79,8 +79,21 @@ def init_db() -> None:
             password_hash TEXT NOT NULL,
             salt TEXT NOT NULL,
             display_name TEXT NOT NULL DEFAULT '',
+            track TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS syllabus_nodes(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL UNIQUE,
+            track TEXT NOT NULL,
+            level INTEGER NOT NULL,
+            parent_code TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL,
+            period TEXT NOT NULL DEFAULT '',
+            order_no INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_syllabus_track ON syllabus_nodes(track, level, order_no);
+
         CREATE TABLE IF NOT EXISTS materials(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
@@ -160,6 +173,8 @@ def init_db() -> None:
             impact TEXT NOT NULL DEFAULT '',
             significance TEXT NOT NULL DEFAULT '',
             tags TEXT NOT NULL DEFAULT '',
+            kind TEXT NOT NULL DEFAULT 'event',
+            node_code TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
             FOREIGN KEY(kp_id) REFERENCES knowledge_points(id) ON DELETE SET NULL
         );
@@ -170,9 +185,11 @@ def init_db() -> None:
     # 顺序：先补 uuid 列（demo 插入要用）→ 保证 users.id=1 → 再做 user_id 迁移
     # （wrong_book 重建时 user_id 列有外键，必须先保证 users.id=1 存在）
     migrate_uuid(conn)
+    migrate_qushi(conn)
     ensure_demo_user(conn)
     migrate_legacy(conn)
     migrate_history(conn)
+    qushi.ensure_syllabus(conn)
     conn.close()
 
 
@@ -299,6 +316,40 @@ def migrate_uuid(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
+def migrate_qushi(conn: sqlite3.Connection) -> None:
+    """v2.0：四史改造。
+
+    - users.track：账号选定的那一门"四史"（party/prc/reform/socialism），空 = 未选课
+    - knowledge_points.node_code：挂到 syllabus_nodes 的哪一节（用 code 而非 id，跨机可同步）
+    - questions.exam_type：思政考法维度（识记/时序/史论/现实）
+    - events.kind / node_code：会议 / 事件 / 文件，以及它属于哪一章
+    - wrong_book.next_review_at / error_type：间隔复习排期与错因归类
+
+    全部 ALTER ADD COLUMN，幂等，不重建表。
+    """
+    def cols_of(table: str) -> set:
+        return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+
+    plan = (
+        ("users", "track", "TEXT NOT NULL DEFAULT ''"),
+        ("knowledge_points", "node_code", "TEXT NOT NULL DEFAULT ''"),
+        ("knowledge_points", "exam_type", "TEXT NOT NULL DEFAULT ''"),
+        ("questions", "exam_type", "TEXT NOT NULL DEFAULT ''"),
+        ("events", "kind", "TEXT NOT NULL DEFAULT 'event'"),
+        ("events", "node_code", "TEXT NOT NULL DEFAULT ''"),
+        ("wrong_book", "next_review_at", "TEXT NOT NULL DEFAULT ''"),
+        ("wrong_book", "error_type", "TEXT NOT NULL DEFAULT ''"),
+    )
+    changed = False
+    for table, col, decl in plan:
+        existing = cols_of(table)
+        if existing and col not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+            changed = True
+    if changed:
+        conn.commit()
+
+
 def migrate_history(conn: sqlite3.Connection) -> None:
     """v1.3：给知识点补时间维度（朝代/起止年），让「知识点」能挂到时间轴上。
 
@@ -374,6 +425,7 @@ def _public_user(row) -> dict:
         "id": row["id"],
         "username": row["username"],
         "display_name": row["display_name"],
+        "track": (row["track"] if "track" in row.keys() else "") or "",
     }
 
 
@@ -441,6 +493,118 @@ def logout():
     服务端黑名单时不需要改前端调用方式。
     """
     return {"ok": True}
+
+
+# ==================== 四史课程（v2.0） ====================
+# 一个账号只学一门四史，选课即全局作用域：所有页面默认只看这一门的数据。
+EXAM_TYPES = (
+    ("recall", "史实识记"),
+    ("sequence", "时序定位"),
+    ("argument", "史论结合"),
+    ("apply", "现实联系"),
+)
+
+
+def _user_track(uid: int) -> str:
+    conn = db()
+    row = conn.execute("SELECT track FROM users WHERE id=?", (uid,)).fetchone()
+    conn.close()
+    return (row["track"] if row and "track" in row.keys() else "") or ""
+
+
+@app.get("/api/tracks")
+def list_tracks(uid: int = Depends(require_user)):
+    """四门课元信息 + 当前选中的是哪一门。"""
+    current = _user_track(uid)
+    items = []
+    for t in qushi.tracks():
+        d = dict(t)
+        d["selected"] = t["key"] == current
+        items.append(d)
+    return {"tracks": items, "current": current, "exam_types": [{"key": k, "label": v} for k, v in EXAM_TYPES]}
+
+
+@app.post("/api/profile/track")
+def set_track(body: dict, uid: int = Depends(require_user)):
+    """选定/切换课程。切换不清数据：旧课的知识点、事件都还在库里，切回去即可见。"""
+    key = (body.get("track") or "").strip()
+    if not qushi.valid_track(key):
+        raise HTTPException(400, "未知的课程")
+    conn = db()
+    conn.execute("UPDATE users SET track=? WHERE id=?", (key, uid))
+    conn.commit()
+    # 首次选课时把该课的内置关键事件灌到用户名下（幂等）
+    seeded = qushi.seed_track_events(conn, uid, key, now())
+    conn.close()
+    return {"track": key, "seeded_events": seeded}
+
+
+@app.get("/api/syllabus")
+def get_syllabus(track: str = "", uid: int = Depends(require_user)):
+    """教材章节树：章 → 节，带该用户每一节的知识点/题目数量。"""
+    key = track or _user_track(uid)
+    if not qushi.valid_track(key):
+        raise HTTPException(400, "请先选择要学习的课程")
+    conn = db()
+    chapters = qushi.tree(conn, key, uid)
+    conn.close()
+    return {
+        "track": key,
+        "track_name": qushi.track_map()[key]["name"],
+        "chapters": chapters,
+        "chapter_count": len(chapters),
+        "section_count": sum(len(c["sections"]) for c in chapters),
+        "total_kp": sum(c["kp"] for c in chapters),
+        "total_q": sum(c["q"] for c in chapters),
+    }
+
+
+@app.get("/api/syllabus/node/{code}")
+def get_syllabus_node(code: str, uid: int = Depends(require_user)):
+    """一节（或一章）的详情：挂在这一节下的知识点、题目、相关事件。"""
+    conn = db()
+    row = qushi.node(conn, code)
+    if not row:
+        conn.close()
+        raise HTTPException(404, "章节不存在")
+    kps = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT id,title,description,exam_type,era FROM knowledge_points "
+            "WHERE user_id=? AND node_code=? ORDER BY id",
+            (uid, code),
+        )
+    ]
+    qcount = conn.execute(
+        "SELECT COUNT(*) AS c FROM questions q JOIN knowledge_points k ON k.id=q.kp_id "
+        "WHERE k.user_id=? AND k.node_code=?",
+        (uid, code),
+    ).fetchone()["c"]
+    events = [
+        _event_row(r)
+        for r in conn.execute(
+            "SELECT * FROM events WHERE user_id=? AND node_code=? ORDER BY year", (uid, code)
+        )
+    ]
+    conn.close()
+    return {
+        "code": code,
+        "title": row["title"],
+        "path": _node_path(code),
+        "level": row["level"],
+        "period": row["period"],
+        "kps": kps,
+        "question_count": qcount,
+        "events": events,
+    }
+
+
+def _node_path(code: str) -> str:
+    conn = db()
+    try:
+        return qushi.path_text(conn, code)
+    finally:
+        conn.close()
 
 
 # ==================== 文档解析 ====================
@@ -615,9 +779,16 @@ def create_kp(body: dict, uid: int = Depends(require_user)):
     title = (body.get("title") or "").strip()
     if not title:
         raise HTTPException(400, "知识点标题不能为空")
+    node_code = (body.get("node_code") or "").strip()
     conn = db()
+    if node_code and not qushi.node(conn, node_code):
+        conn.close()
+        raise HTTPException(400, "章节不存在")
+    # 没指定到节时，至少打上本课的粗标签，保证选课后仍能在列表里看到
+    node_code = node_code or _user_track(uid)
     cur = conn.execute(
-        "INSERT INTO knowledge_points(user_id,uuid,material_id,course,title,description,created_at) VALUES(?,?,?,?,?,?,?)",
+        "INSERT INTO knowledge_points(user_id,uuid,material_id,course,title,description,node_code,exam_type,created_at)"
+        " VALUES(?,?,?,?,?,?,?,?,?)",
         (
             uid,
             uuid.uuid4().hex,
@@ -625,17 +796,20 @@ def create_kp(body: dict, uid: int = Depends(require_user)):
             body.get("course", "未分类"),
             title,
             body.get("description", ""),
+            node_code,
+            body.get("exam_type", ""),
             now(),
         ),
     )
     conn.commit()
     kid = cur.lastrowid
     conn.close()
-    return {"id": kid}
+    return {"id": kid, "node_code": node_code}
 
 
 @app.get("/api/knowledge-points")
-def list_kps(course: str = None, uid: int = Depends(require_user)):
+def list_kps(course: str = None, track: str = "", node_code: str = "", uid: int = Depends(require_user)):
+    """track 有值时只看这门课的知识点（按 node_code 前缀过滤）。"""
     conn = db()
     sql = """SELECT k.*, m.title AS material_title,
              (SELECT COUNT(*) FROM questions q WHERE q.kp_id=k.id) AS question_count
@@ -645,6 +819,12 @@ def list_kps(course: str = None, uid: int = Depends(require_user)):
     if course:
         sql += " AND k.course=?"
         params.append(course)
+    if node_code:
+        sql += " AND k.node_code=?"
+        params.append(node_code)
+    elif track:
+        sql += " AND k.node_code LIKE ?"
+        params.append(f"{track}-%")
     sql += " ORDER BY k.id DESC"
     rows = conn.execute(sql, params).fetchall()
     conn.close()
@@ -655,7 +835,7 @@ def list_kps(course: str = None, uid: int = Depends(require_user)):
 def update_kp(kid: int, body: dict, uid: int = Depends(require_user)):
     conn = db()
     fields, params = [], []
-    for col in ("title", "description", "course"):
+    for col in ("title", "description", "course", "node_code", "exam_type", "era", "year_start", "year_end"):
         if col in body:
             fields.append(f"{col}=?")
             params.append(body[col])
@@ -776,6 +956,8 @@ EVENT_COLUMNS = (
     "impact",
     "significance",
     "tags",
+    "kind",
+    "node_code",
 )
 
 
@@ -795,8 +977,8 @@ def create_event(body: dict, uid: int = Depends(require_user)):
     conn = db()
     cur = conn.execute(
         "INSERT INTO events(user_id,uuid,title,era,year,year_end,year_label,place,people,"
-        "cause,process,impact,significance,tags,kp_id,created_at)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "cause,process,impact,significance,tags,kp_id,kind,node_code,created_at)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             uid,
             uuid.uuid4().hex,
@@ -813,6 +995,8 @@ def create_event(body: dict, uid: int = Depends(require_user)):
             body.get("significance", ""),
             body.get("tags", ""),
             body.get("kp_id"),
+            body.get("kind", "event"),
+            body.get("node_code") or _user_track(uid),
             now(),
         ),
     )
@@ -824,7 +1008,7 @@ def create_event(body: dict, uid: int = Depends(require_user)):
 
 
 @app.get("/api/events")
-def list_events(era: str = "", kp_id: int = None, uid: int = Depends(require_user)):
+def list_events(era: str = "", kp_id: int = None, track: str = "", uid: int = Depends(require_user)):
     conn = db()
     sql = "SELECT * FROM events WHERE user_id=?"
     params: list = [uid]
@@ -834,6 +1018,9 @@ def list_events(era: str = "", kp_id: int = None, uid: int = Depends(require_use
     if kp_id:
         sql += " AND kp_id=?"
         params.append(kp_id)
+    if track:
+        sql += " AND (node_code=? OR node_code LIKE ?)"
+        params.extend([track, f"{track}-%"])
     # 年份未知的排最后；公元前为负数，天然排在最前
     sql += " ORDER BY year IS NULL, year, id"
     rows = conn.execute(sql, params).fetchall()
@@ -880,33 +1067,47 @@ def delete_event(eid: int, uid: int = Depends(require_user)):
 
 
 @app.get("/api/timeline")
-def get_timeline(era: str = "", uid: int = Depends(require_user)):
-    """时间轴聚合：时期分段 + 事件 + 挂到年份上的知识点。"""
+def get_timeline(era: str = "", track: str = "", uid: int = Depends(require_user)):
+    """时间轴聚合：时期分段 + 事件 + 挂到年份上的知识点。
+
+    track 有值时只看该课的事件与知识点（node_code 前缀）。
+    """
     conn = db()
     sql = "SELECT * FROM events WHERE user_id=?"
     params: list = [uid]
     if era:
         sql += " AND era=?"
         params.append(era)
+    if track:
+        sql += " AND (node_code=? OR node_code LIKE ?)"
+        params.extend([track, f"{track}-%"])
     sql += " ORDER BY year IS NULL, year, id"
     events = [_event_row(r) for r in conn.execute(sql, params).fetchall()]
 
+    era_sql = (
+        "SELECT era, MIN(year) AS start, MAX(COALESCE(year_end, year)) AS end, COUNT(*) AS n"
+        " FROM events WHERE user_id=? AND era<>'' AND year IS NOT NULL"
+    )
+    era_params: list = [uid]
+    if track:
+        era_sql += " AND node_code LIKE ?"
+        era_params.append(f"{track}-%")
     eras = [
         dict(r)
-        for r in conn.execute(
-            "SELECT era, MIN(year) AS start, MAX(COALESCE(year_end, year)) AS end, COUNT(*) AS n"
-            " FROM events WHERE user_id=? AND era<>'' AND year IS NOT NULL"
-            " GROUP BY era ORDER BY start",
-            (uid,),
-        ).fetchall()
+        for r in conn.execute(era_sql + " GROUP BY era ORDER BY start", era_params).fetchall()
     ]
+
+    kp_sql = (
+        "SELECT id,title,course,era,year_start,year_end FROM knowledge_points"
+        " WHERE user_id=? AND year_start IS NOT NULL"
+    )
+    kp_params: list = [uid]
+    if track:
+        kp_sql += " AND node_code LIKE ?"
+        kp_params.append(f"{track}-%")
     kps = [
         dict(r)
-        for r in conn.execute(
-            "SELECT id,title,course,era,year_start,year_end FROM knowledge_points"
-            " WHERE user_id=? AND year_start IS NOT NULL ORDER BY year_start",
-            (uid,),
-        ).fetchall()
+        for r in conn.execute(kp_sql + " ORDER BY year_start", kp_params).fetchall()
     ]
     conn.close()
 
@@ -956,12 +1157,13 @@ def generate_questions(body: dict, uid: int = Depends(require_user)):
     else:
         try:
             raw = ai_helper.call_llm(
-                "你是高中历史教师，负责命制史料题。请基于给定史料/课文出题，题型从"
-                "「名词解释」「时间排序」「因果分析」「史料解读」「论述」中选取，尽量覆盖多种题型。"
-                "史料解读题必须引用材料原文片段，并问「反映了什么」「作者的立场」「该史料的史料价值」。"
+                "你是高校思政课「四史」课程（党史/新中国史/改革开放史/社会主义发展史）的任课教师，负责按思政课考法出题。"
+                "题型从「单选题」「名词解释」「时间排序」「简答」「材料分析」「论述」中选取，尽量覆盖多种题型。"
+                "单选题给四个选项并标明答案；材料分析题必须引用材料原文片段，"
+                "并问「说明了什么」「为什么」「如何评价」；论述题要求史论结合、条理清晰。"
                 '只输出 JSON 数组，每项 {"type":"题型","question":"题干","answer":"参考答案"}，'
-                f"共 {num} 题；答案必须能在材料中找到依据或符合史学共识，不得编造史实。",
-                f"知识点：{kp['title']}\n史料：\n{build_context(ai_helper.chunk_text(context, CHUNK_SIZE))}",
+                f"共 {num} 题；答案必须符合权威简史表述，重大年份、会议、文件不得写错，不得编造史实。",
+                f"知识点：{kp['title']}\n教材原文：\n{build_context(ai_helper.chunk_text(context, CHUNK_SIZE))}",
             )
             questions = ai_helper.parse_questions_json(raw)
             source = "ai"
@@ -995,6 +1197,8 @@ def generate_questions(body: dict, uid: int = Depends(require_user)):
 
 
 PERSONAL_MAX_WRONG = 8  # 一次个性化出题最多参考多少条错题
+# 错题间隔复习的天数阶梯（艾宾浩斯式）：错得越多，下次复习越晚
+REVIEW_INTERVALS = (1, 2, 4, 7, 15)
 
 
 @app.post("/api/questions/generate-personal")
@@ -1036,11 +1240,13 @@ def generate_personal(body: dict, uid: int = Depends(require_user)):
     if ai_helper.is_available():
         try:
             raw = ai_helper.call_llm(
-                "你是高中历史教师，正在为学生做错题针对性训练。下面列出该学生做错且尚未掌握的题。"
+                "你是高校思政课「四史」课程的任课教师，正在为学生做错题针对性训练。"
+                "下面列出该学生做错且尚未掌握的题。"
                 "请为每个考点另出一道「同考点、同题型、不同材料或情境」的新题，严禁照抄原题干。"
-                "题型从「名词解释」「时间排序」「因果分析」「史料解读」「论述」中选取，"
-                "优先与原错题保持一致；史料解读题须引用材料原文。只输出 JSON 数组，"
-                '每项 {"type":"题型","question":"题干","answer":"参考答案"}，不得编造史实。',
+                "题型从「单选题」「名词解释」「时间排序」「简答」「材料分析」「论述」中选取，"
+                "优先与原错题保持一致；材料分析题须引用材料原文。只输出 JSON 数组，"
+                '每项 {"type":"题型","question":"题干","answer":"参考答案"}；'
+                "答案须符合权威简史表述，重大年份、会议、文件不得写错。",
                 f"共 {len(wrongs)} 条错题，请出 {num} 道新题。\n\n错题清单：\n{brief}",
             )
             questions = ai_helper.parse_questions_json(raw)
@@ -1124,12 +1330,27 @@ def submit_practice(body: dict, uid: int = Depends(require_user)):
         (uid, uuid.uuid4().hex, qid, answer, correct, now()),
     )
     if not correct:
+        # 间隔复习：错得越多，下一次复习越往后（1/2/4/7/15 天），答对则由 correct_streak 出库
+        days = REVIEW_INTERVALS[min(int(body.get("wrong_count") or 1) - 1, len(REVIEW_INTERVALS) - 1)]
+        next_at = (datetime.now() + timedelta(days=days)).isoformat(timespec="seconds")
         conn.execute(
-            """INSERT INTO wrong_book(user_id,uuid,question_id,wrong_count,last_wrong_at)
-               VALUES(?,?,?,?,?)
+            """INSERT INTO wrong_book(user_id,uuid,question_id,wrong_count,last_wrong_at,
+                                      next_review_at,error_type)
+               VALUES(?,?,?,?,?,?,?)
                ON CONFLICT(question_id, user_id) DO UPDATE SET wrong_count=wrong_count+1,
-               resolved=0, correct_streak=0, last_wrong_at=excluded.last_wrong_at""",
-            (uid, uuid.uuid4().hex, qid, 1, now()),
+               resolved=0, correct_streak=0, last_wrong_at=excluded.last_wrong_at,
+               next_review_at=excluded.next_review_at,
+               error_type=CASE WHEN excluded.error_type<>'' THEN excluded.error_type
+                               ELSE wrong_book.error_type END""",
+            (
+                uid,
+                uuid.uuid4().hex,
+                qid,
+                1,
+                now(),
+                next_at,
+                (body.get("error_type") or "").strip(),
+            ),
         )
     else:
         # 答对：连续答对计数 +1，达到 MASTERY_STREAK 次才移出活跃错题库

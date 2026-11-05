@@ -84,7 +84,8 @@ def main() -> None:
     base_url = f"http://127.0.0.1:{port}"
 
     print("=" * 56)
-    print("  AI 智能学习助手  v1.0")
+    print("  「四史」学习助手  v1.0")
+    print("  党史 / 新中国史 / 改革开放史 / 社会主义发展史")
     print("=" * 56)
     print(f"  服务地址：{base_url}")
     print(f"  接口文档：{base_url}/docs")

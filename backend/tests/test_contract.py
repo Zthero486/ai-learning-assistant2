@@ -102,6 +102,10 @@ CONTRACT_MANIFEST = {
     "POST /api/ai/summarize",
     "POST /api/ai/ask",
     "POST /api/ai/weak-analysis",
+    "GET /api/tracks",
+    "POST /api/profile/track",
+    "GET /api/syllabus",
+    "GET /api/syllabus/node/{code}",
 }
 
 # ==================== 结构采集 ====================
@@ -433,6 +437,34 @@ def _probe_ai_runtime(c, ctx) -> dict:
     return out
 
 
+def _probe_qushi(c, ctx) -> dict:
+    """四史改造新增：选课、教材章节树、节详情。"""
+    out = {}
+    r = c.get("/api/tracks")
+    body = r.json()
+    out["tracks"] = {"status": r.status_code, "body": schema_of(body)}
+    out["track_keys"] = sorted(t["key"] for t in body["tracks"])
+
+    r = c.post("/api/profile/track", json={"track": "party"})
+    out["set_track"] = {"status": r.status_code, "body": schema_of(r.json())}
+    r = c.post("/api/profile/track", json={"track": "不存在的课"})
+    out["set_track_400"] = {"status": r.status_code, "body": schema_of(r.json())}
+
+    r = c.get("/api/syllabus")
+    body = r.json()
+    out["syllabus"] = {"status": r.status_code, "body": schema_of(body)}
+    out["syllabus_shape"] = {
+        "chapters": len(body.get("chapters", [])),
+        "sections": body.get("section_count"),
+    }
+
+    r = c.get("/api/syllabus/node/party-01-01")
+    out["node"] = {"status": r.status_code, "body": schema_of(r.json())}
+    r = c.get("/api/syllabus/node/不存在")
+    out["node_404"] = {"status": r.status_code, "body": schema_of(r.json())}
+    return out
+
+
 # ==================== fixture ====================
 
 
@@ -513,7 +545,7 @@ def test_接口清单与实测一致():
         f"  清单里有、代码里没有：{sorted(CONTRACT_MANIFEST - actual)}\n"
         "新增/删除接口时，请同步更新 CONTRACT_MANIFEST 并刷新快照。"
     )
-    assert len(CONTRACT_MANIFEST) == 44, f"接口数量应为 44，当前 {len(CONTRACT_MANIFEST)}"
+    assert len(CONTRACT_MANIFEST) == 48, f"接口数量应为 48，当前 {len(CONTRACT_MANIFEST)}"
 
 
 def test_openapi_与路由表一致():
@@ -552,6 +584,7 @@ def test_契约快照(client, scenario):
         "GET /api/stats/overview": _probe_stats,
         "GET /api/config/ai": _probe_ai_config,
         "POST /api/ai/test": _probe_ai_runtime,
+        "GET /api/tracks": _probe_qushi,
     }
     # 上传探针会真实写库，放在最后跑，避免污染前面的场景数据
     ordered = [(k, v) for k, v in probes.items() if k != "POST /api/materials/upload"]
@@ -652,6 +685,7 @@ def regenerate() -> int:
                 ("GET /api/stats/overview", _probe_stats, True),
                 ("GET /api/config/ai", _probe_ai_config, True),
                 ("POST /api/ai/test", _probe_ai_runtime, True),
+                ("GET /api/tracks", _probe_qushi, True),
                 ("POST /api/materials/upload", _probe_upload, False),
             ]
             payload = {
