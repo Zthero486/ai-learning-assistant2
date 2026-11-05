@@ -40,8 +40,8 @@
           <el-result
             v-if="aiAvailable !== null"
             :icon="aiAvailable ? 'success' : 'info'"
-            :title="aiAvailable ? 'DeepSeek API 已连接' : '未配置 API Key（规则引擎模式）'"
-            :sub-title="aiAvailable ? '答疑/总结/出题均由大模型驱动' : '功能可用但为检索式降级；在 backend/.env 配置 DEEPSEEK_API_KEY 后启用大模型'"
+            :title="aiAvailable ? '大模型 API 已连接' : '未配置 API Key（规则引擎模式）'"
+            :sub-title="aiAvailable ? '答疑/总结/出题均由大模型驱动' : '功能可用但为检索式降级；到「AI 助手 → 配置 API Key」选平台、粘贴 Key 即可启用大模型（免改文件）'"
           />
         </el-card>
       </el-col>

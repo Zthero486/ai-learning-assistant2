@@ -351,7 +351,8 @@ def fallback_answer(question: str, chunks: list) -> str:
     if not hits:
         return (
             "【规则引擎答疑】在已导入的资料中没有检索到与该问题相关的内容。\n"
-            "提示：配置 DEEPSEEK_API_KEY 后可获得基于大模型的智能答疑。"
+            "提示：到「AI 助手 → 配置 API Key」选平台（如阶跃 StepFun / 智谱 GLM）"
+            "粘贴 Key 并保存，即可获得基于大模型的智能答疑。"
         )
     lines = ["【规则引擎答疑（未配置 AI，模式：资料检索）】", ""]
     for i, h in enumerate(hits, 1):
