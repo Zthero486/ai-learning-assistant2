@@ -9,6 +9,7 @@
 开发态也可直接运行本文件调试：python -m backend.launcher（需先有 frontend/dist）
 """
 
+import shutil
 import socket
 import sys
 import threading
@@ -16,8 +17,31 @@ import time
 import urllib.error
 import urllib.request
 import webbrowser
+from pathlib import Path
 
 import uvicorn
+
+
+def app_base_dir() -> Path:
+    """可写数据目录：打包态为 exe 所在目录，开发态为项目根目录。"""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
+def seed_database() -> None:
+    """首次启动时，把随包附带的演示库 data/app.db.seed 复制成 data/app.db。
+
+    只复制、绝不覆盖：之后升级版本时，哪怕整个 zip 解压覆盖旧目录，
+    只要 data/app.db 已存在就不会被动到 —— 学生自己的练习/错题不会丢。
+    """
+    data_dir = app_base_dir() / "data"
+    db = data_dir / "app.db"
+    seed = data_dir / "app.db.seed"
+    if db.exists() or not seed.is_file():
+        return
+    data_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(seed, db)
 
 
 def pick_port(preferred: int = 8000, span: int = 10) -> int:
@@ -55,6 +79,7 @@ def wait_ready(url: str, timeout: float = 20.0) -> bool:
 
 
 def main() -> None:
+    seed_database()
     port = pick_port(8000)
     base_url = f"http://127.0.0.1:{port}"
 

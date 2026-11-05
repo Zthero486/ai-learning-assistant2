@@ -47,6 +47,12 @@ USAGE_TEXT = """历史学习助手 v1.0 —— 使用说明
     data/uploads/   导入的原始文档
 整个文件夹可以整体拷贝到别的电脑，数据一起带走（便携绿色版，免安装）。
 
+【升级版本时要注意】
+不需要每次重新解压！新版本只要**替换掉 AILearningAssistant.exe** 就行，
+data 文件夹不用动，进度、错题、笔记全都在。
+（真要重新解压也可以：data/app.db 已存在时程序不会覆盖它，
+ 随包的 data/app.db.seed 只在第一次启动、还没有 app.db 时才会复制一份。）
+
 【AI 功能】
 本版本已内置阶跃 StepFun 大模型，装好即用，不需要任何配置：
 史料总结、史料答疑、按错题个性化出题、薄弱点分析都由大模型驱动。
@@ -266,7 +272,12 @@ def make_zip() -> None:
             if path.name.startswith(".env") and path.name != ".env.example":
                 continue
             rel = path.relative_to(RELEASE)
-            zf.write(path, f"{inner}/{rel.as_posix()}")
+            arcname = f"{inner}/{rel.as_posix()}"
+            # 演示库改名成 .seed：首次启动才复制成 app.db。
+            # 这样「新 zip 解压覆盖旧目录」也不会把学生已有数据冲掉。
+            if rel.as_posix() == "data/app.db":
+                arcname = f"{inner}/data/app.db.seed"
+            zf.write(path, arcname)
             if path.is_file():
                 count += 1
     size_mb = archive.stat().st_size / 1024 / 1024
