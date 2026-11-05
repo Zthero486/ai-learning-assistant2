@@ -945,7 +945,9 @@
               "model": "string"
             }
           },
-          "proxy": "string"
+          "proxy": "string",
+          "source": "string",
+          "source_label": "string"
         },
         "status": 200
       },
@@ -981,6 +983,7 @@
         "ai_available": "boolean",
         "ai_base_url": "null",
         "ai_model": "null",
+        "ai_source": "string",
         "status": "string"
       },
       "status": 200

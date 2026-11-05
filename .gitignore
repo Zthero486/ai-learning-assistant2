@@ -33,6 +33,8 @@ Thumbs.db
 .env.*
 !.env.example
 *.local
+# 打包期临时注入的内置 key（含明文，绝不可入库）
+backend/app/_builtin_key.py
 
 # ---- 打包产物（由 scripts/build_portable.py 生成，不入库）----
 release/

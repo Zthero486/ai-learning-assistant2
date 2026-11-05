@@ -40,8 +40,8 @@
           <el-result
             v-if="aiAvailable !== null"
             :icon="aiAvailable ? 'success' : 'info'"
-            :title="aiAvailable ? '大模型 API 已连接' : '未配置 API Key（规则引擎模式）'"
-            :sub-title="aiAvailable ? '答疑/总结/出题均由大模型驱动' : '功能可用但为检索式降级；到「AI 助手 → 配置 API Key」选平台、粘贴 Key 即可启用大模型（免改文件）'"
+            :title="aiAvailable ? '大模型 API 已就绪' : '未配置 API Key（规则引擎模式）'"
+            :sub-title="aiSubTitle"
           />
         </el-card>
       </el-col>
@@ -56,6 +56,17 @@ import api from '../api'
 const stats = ref({ totals: {}, per_kp: [] })
 const dueTasks = ref([])
 const aiAvailable = ref(null)
+const aiSource = ref('none')
+const aiModel = ref('')
+
+const aiSubTitle = computed(() => {
+  if (!aiAvailable.value) {
+    return '功能可用但为检索式降级；到「AI 助手 → 配置 API Key」选平台、粘贴 Key 即可启用大模型（免改文件）'
+  }
+  const who = aiSource.value === 'builtin' ? '内置阶跃 StepFun（默认）' : '自建大模型'
+  const model = aiModel.value ? `（${aiModel.value}）` : ''
+  return `${who}${model} —— 答疑 / 总结 / 出题均由大模型驱动`
+})
 
 const totalCards = computed(() => [
   { label: '史料笔记', value: stats.value.totals.materials ?? 0 },
@@ -70,7 +81,10 @@ onMounted(async () => {
   try {
     stats.value = await api.statsOverview()
     dueTasks.value = await api.dueSoon(3)
-    aiAvailable.value = (await api.aiHealth()).ai_available
+    const h = await api.aiHealth()
+    aiAvailable.value = h.ai_available
+    aiSource.value = h.ai_source || 'none'
+    aiModel.value = h.ai_model || ''
   } catch (e) {
     console.error(e)
   }

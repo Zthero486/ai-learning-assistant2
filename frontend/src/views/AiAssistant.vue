@@ -3,7 +3,7 @@
     <template #header>AI 引擎状态</template>
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <el-tag :type="aiAvailable ? 'success' : 'warning'" size="large">
-        {{ aiAvailable === null ? '检测中…' : (aiAvailable ? '已接入大模型 API' : '未配置 API Key（规则引擎模式）') }}
+        {{ statusText }}
       </el-tag>
       <el-button size="small" @click="checkConnection" :loading="checkLoading">检测 AI 连接</el-button>
       <el-button size="small" type="primary" @click="openConfig">配置 API Key</el-button>
@@ -27,25 +27,25 @@
       type="info"
       :closable="false"
       show-icon
-      title="不配置也能用，配置后答疑/总结/出题将由大模型驱动"
-      description="已内置 Google Gemini 配置；境内访问 Google 需代理，Clash 一般为 http://127.0.0.1:7897，填在下方「代理地址」即可。国内直连可换智谱 GLM-4-Flash（open.bigmodel.cn，永久免费）。"
+      title="默认已内置阶跃 StepFun，不填任何东西也能用大模型"
+      description="想换成自己的模型：选下方平台预设（阶跃 / 智谱 GLM 都国内直连）→ 粘贴自己的 Key → 保存即可，随时可点「恢复默认」切回内置阶跃。境外平台（如 Google Gemini）才需要填代理地址。"
       style="margin-bottom:14px"
     />
     <el-form label-width="90px">
       <el-form-item label="平台预设">
         <el-select v-model="config.preset" style="width:100%" @change="applyPreset">
-          <el-option label="Google Gemini（需代理）" value="gemini" />
+          <el-option label="阶跃 StepFun（内置默认，国内直连）" value="stepfun" />
           <el-option label="智谱 GLM（国内直连，永久免费）" value="zhipu" />
+          <el-option label="MiniMax M Plan（订阅 Key）" value="minimax" />
           <el-option label="硅基流动 SiliconFlow（9B 以下免费）" value="siliconflow" />
           <el-option label="阿里云百炼（新用户额度）" value="dashscope" />
           <el-option label="DeepSeek（付费，推理强）" value="deepseek" />
           <el-option label="OpenRouter（免费模型）" value="openrouter" />
-          <el-option label="MiniMax M Plan（订阅 Key）" value="minimax" />
-          <el-option label="阶跃 StepFun（国内直连）" value="stepfun" />
+          <el-option label="Google Gemini（境外，需代理）" value="gemini" />
         </el-select>
       </el-form-item>
       <el-form-item label="API Key">
-        <el-input v-model="config.api_key" placeholder="粘贴你的 API Key" show-password />
+        <el-input v-model="config.api_key" placeholder="粘贴自己的 Key；留空保存＝恢复内置阶跃默认" show-password />
       </el-form-item>
       <el-form-item label="接口地址">
         <el-input v-model="config.base_url" />
@@ -62,6 +62,7 @@
     </el-form>
     <template #footer>
       <el-button @click="configVisible = false">取消</el-button>
+      <el-button @click="resetToBuiltin" :loading="saveLoading">恢复默认（阶跃）</el-button>
       <el-button type="primary" :loading="saveLoading" @click="saveConfig">保存并生效</el-button>
     </template>
   </el-dialog>
@@ -111,22 +112,30 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api'
 
 const aiAvailable = ref(null)
+const aiSource = ref('none')
 const checkLoading = ref(false)
 const checkResult = ref(null)
 const configVisible = ref(false)
 const saveLoading = ref(false)
 const presets = ref({})
-const config = ref({ preset: 'gemini', api_key: '', base_url: '', model: '', proxy: '', env_path: '' })
+const config = ref({ preset: 'stepfun', api_key: '', base_url: '', model: '', proxy: '', env_path: '' })
+
+const statusText = computed(() => {
+  if (aiAvailable.value === null) return '检测中…'
+  if (!aiAvailable.value) return '未配置 API Key（规则引擎模式）'
+  return aiSource.value === 'builtin' ? '内置阶跃 StepFun（默认）' : '已接入自建大模型'
+})
 
 async function loadStatus() {
   try {
     const h = await api.aiHealth()
     aiAvailable.value = h.ai_available
+    aiSource.value = h.ai_source || 'none'
   } catch {
     aiAvailable.value = null
   }
@@ -137,7 +146,7 @@ async function openConfig() {
     const c = await api.aiConfig()
     presets.value = c.presets || {}
     config.value = {
-      preset: 'gemini',
+      preset: 'stepfun',
       api_key: '',
       base_url: c.base_url,
       model: c.model,
@@ -159,7 +168,6 @@ function applyPreset(name) {
 }
 
 async function saveConfig() {
-  if (!config.value.api_key.trim()) return ElMessage.warning('请先粘贴 API Key')
   saveLoading.value = true
   try {
     const r = await api.saveAiConfig({
@@ -171,6 +179,21 @@ async function saveConfig() {
     ElMessage.success(r.message)
     configVisible.value = false
     config.value.api_key = ''
+    await loadStatus()
+    await checkConnection()
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    saveLoading.value = false
+  }
+}
+
+async function resetToBuiltin() {
+  saveLoading.value = true
+  try {
+    const r = await api.saveAiConfig({ api_key: '', base_url: '', model: '', proxy: '' })
+    ElMessage.success(r.message)
+    configVisible.value = false
     await loadStatus()
     await checkConnection()
   } catch (e) {

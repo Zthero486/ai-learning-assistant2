@@ -83,11 +83,18 @@ python scripts/build_portable.py
 
 产物在 `release/` 目录：**双击 `AILearningAssistant.exe` 即可运行**，自动启动服务并打开界面；数据保存在 exe 同级的 `data/` 目录，整个文件夹可整体拷贝到其他电脑。详见[打包与发布说明](docs/打包发布说明.md)。
 
+> 默认会把 `backend/.env` 里的 AI key 冻结进 exe（分享包开箱即用）；
+> 要发「不带任何 key」的公开版本就加 `--no-embed-key`：
+> `python scripts/build_portable.py --no-embed-key`。
+
 ## 配置 AI（可选，有免费方案）
+
+**默认不用配**：打包版会把 `backend/.env` 里的 key 冻结进 exe 作为「内置默认」，
+解压双击就能用大模型（当前内置阶跃 StepFun）。想换自己的模型再往下看。
 
 **方式一：在软件里配置（推荐，免改文件）**
 打开「AI 助手」页 → 点「配置 API Key」→ 选平台预设 → 粘贴 Key → 保存并生效 → 点「检测 AI 连接」验证。
-配置写入程序目录的 `.env` 并**立即生效，无需重启**。
+配置写入程序目录的 `.env` 并**立即生效，无需重启**；点「恢复默认（阶跃）」可清掉自定义配置、切回内置 key。
 
 **方式二：手工编辑 `.env`**（复制 `backend/.env.example` 为 `backend/.env`）
 

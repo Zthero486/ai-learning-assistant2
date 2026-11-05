@@ -34,10 +34,15 @@ def _isolate_ai_env():
     开发机上的 backend/.env 可能已经填了真实 key（ai_helper 在 import 时就
     读取它），这会让「未配置 key 时应走规则引擎」的用例失败。测试一律从
     「没有 key」的干净环境起步，需要 key 的用例自己 monkeypatch。
+
+    同理：打包版会注入「内置默认 key」，测试期必须用 AI_DISABLE_BUILTIN=1
+    关掉，否则默认就带 AI，规则引擎分支永远测不到。
     """
     for name in ("AI_API_KEY", "AI_BASE_URL", "AI_MODEL", "AI_PROXY", "DEEPSEEK_API_KEY"):
         os.environ.pop(name, None)
+    os.environ["AI_DISABLE_BUILTIN"] = "1"
     yield
+    os.environ.pop("AI_DISABLE_BUILTIN", None)
 
 
 class AuthClient(TestClient):

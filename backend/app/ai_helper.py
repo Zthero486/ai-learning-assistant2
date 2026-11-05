@@ -78,22 +78,62 @@ def _load_dotenv() -> None:
 _load_dotenv()
 
 
-def get_api_key() -> str:
-    """取 API key：优先通用名 AI_API_KEY，兼容早期的 DEEPSEEK_API_KEY。"""
+# ---------- 内置默认 key（打包时注入）----------
+# 课设演示用：scripts/build_portable.py 会把 .env 里的阶跃 key 写进 _builtin_key.py，
+# 并随 exe 一起冻结，使分享包「解压即用、默认走阶跃大模型」。
+# 源码树里该文件为空/不存在，开发与测试仍按 .env 走，不依赖内置 key。
+try:  # pragma: no cover - 只有打包产物里才有内容
+    from ._builtin_key import BUILTIN_API_KEY as _BUILTIN_API_KEY
+except Exception:  # 文件缺失、语法错误都不该影响启动
+    _BUILTIN_API_KEY = ""
+
+BUILTIN_PROVIDER = "stepfun"
+BUILTIN_LABEL = "内置阶跃 StepFun（默认）"
+
+
+def _env_key() -> str:
+    """环境变量（.env 或界面配置）里的 key。"""
     return (os.environ.get("AI_API_KEY") or os.environ.get("DEEPSEEK_API_KEY") or "").strip()
 
 
+def builtin_key() -> str:
+    """构建时注入的内置 key；设置 AI_DISABLE_BUILTIN=1 可临时关掉（测试用）。"""
+    if os.environ.get("AI_DISABLE_BUILTIN"):
+        return ""
+    return (_BUILTIN_API_KEY or "").strip()
+
+
+def key_source() -> str:
+    """key 来源：custom（用户自己配的）/ builtin（内置阶跃）/ none（未配置）。"""
+    if _env_key():
+        return "custom"
+    return "builtin" if builtin_key() else "none"
+
+
+def get_api_key() -> str:
+    """取 API key：用户配置优先，其次内置默认，都没有返回空串（走规则引擎）。"""
+    return _env_key() or builtin_key()
+
+
 def is_available() -> bool:
-    """是否配置了大模型 API key。"""
+    """是否可用大模型（用户配置或内置默认任一存在）。"""
     return bool(get_api_key())
 
 
 def get_base_url() -> str:
-    return os.environ.get("AI_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
+    if os.environ.get("AI_BASE_URL"):
+        return os.environ["AI_BASE_URL"].rstrip("/")
+    if builtin_key():
+        return PROVIDER_PRESETS[BUILTIN_PROVIDER]["base_url"].rstrip("/")
+    return DEFAULT_BASE_URL
 
 
 def get_model() -> str:
-    return os.environ.get("AI_MODEL", DEFAULT_MODEL)
+    if os.environ.get("AI_MODEL"):
+        return os.environ["AI_MODEL"]
+    if builtin_key():
+        return PROVIDER_PRESETS[BUILTIN_PROVIDER]["model"]
+    return DEFAULT_MODEL
 
 
 def get_proxy() -> str:
@@ -155,14 +195,37 @@ def write_env_config(api_key: str, base_url: str, model: str, proxy: str = "") -
 def config_snapshot() -> dict:
     """当前 AI 配置（key 已脱敏），供界面展示。"""
     key = get_api_key()
+    source = key_source()
     return {
         "configured": bool(key),
-        "api_key_masked": mask_key(key),
+        "source": source,
+        "source_label": {
+            "custom": "自定义大模型（你在软件内配置的 Key）",
+            "builtin": BUILTIN_LABEL,
+            "none": "未配置（规则引擎模式）",
+        }[source],
+        "api_key_masked": mask_key(key) if key else "",
         "base_url": get_base_url(),
         "model": get_model(),
         "proxy": get_proxy(),
         "env_path": str(apppaths.env_file()),
     }
+
+
+def reset_runtime_config() -> None:
+    """清掉运行时 AI 配置，回落到内置默认（阶跃）或规则引擎。"""
+    for name in ("AI_API_KEY", "AI_BASE_URL", "AI_MODEL", "AI_PROXY", "DEEPSEEK_API_KEY"):
+        os.environ.pop(name, None)
+    path = apppaths.env_file()
+    if not path.exists():
+        return
+    keep = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        name = line.split("=", 1)[0].strip()
+        if name in ("AI_API_KEY", "AI_BASE_URL", "AI_MODEL", "AI_PROXY", "DEEPSEEK_API_KEY"):
+            continue
+        keep.append(line)
+    path.write_text("\n".join(keep).rstrip("\n") + "\n", encoding="utf-8")
 
 
 def call_llm(system_prompt: str, user_prompt: str) -> str:

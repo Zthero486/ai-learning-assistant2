@@ -509,6 +509,7 @@ def health():
     return {
         "status": "ok",
         "ai_available": ai_helper.is_available(),
+        "ai_source": ai_helper.key_source(),
         "ai_base_url": ai_helper.get_base_url() if ai_helper.is_available() else None,
         "ai_model": ai_helper.get_model() if ai_helper.is_available() else None,
     }
@@ -1578,13 +1579,32 @@ def get_ai_config(uid: int = Depends(require_user)):
 
 @app.post("/api/config/ai")
 def set_ai_config(body: dict, uid: int = Depends(require_user)):
-    """在软件内配置 AI：写回 exe 同级的 .env 并即时生效，无需重启。"""
+    """在软件内配置 AI：写回 exe 同级的 .env 并即时生效，无需重启。
+
+    api_key 留空表示「恢复默认」：清掉自定义配置，回落到内置的阶跃 StepFun
+    （若该版本没有内置 key，则回落到规则引擎）。
+    """
     api_key = (body.get("api_key") or "").strip()
     base_url = (body.get("base_url") or ai_helper.DEFAULT_BASE_URL).strip().rstrip("/")
     model = (body.get("model") or ai_helper.DEFAULT_MODEL).strip()
     proxy = (body.get("proxy") or "").strip()
 
-    if api_key and len(api_key) < 8:
+    if not api_key:
+        ai_helper.reset_runtime_config()
+        usable = ai_helper.is_available()
+        return {
+            "saved": True,
+            "configured": usable,
+            "reset": True,
+            "source": ai_helper.key_source(),
+            "env_path": str(apppaths.env_file()),
+            "message": (
+                f"已恢复默认：{ai_helper.BUILTIN_LABEL}，可直接点「检测 AI 连接」验证"
+                if usable
+                else "已清空自定义配置，当前为规则引擎模式"
+            ),
+        }
+    if len(api_key) < 8:
         raise HTTPException(400, "API Key 看起来不完整（长度过短），请检查是否复制齐全")
     if not base_url.startswith("http"):
         raise HTTPException(400, "接口地址必须以 http 开头")
@@ -1599,7 +1619,8 @@ def set_ai_config(body: dict, uid: int = Depends(require_user)):
     ai_helper.apply_runtime_config(api_key, base_url, model, proxy)
     return {
         "saved": True,
-        "configured": bool(api_key),
+        "configured": True,
+        "source": "custom",
         "env_path": str(apppaths.env_file()),
         "message": "配置已保存并生效，可直接点击「检测 AI 连接」验证",
     }

@@ -28,6 +28,7 @@ RELEASE = ROOT / "release"
 BUILD = ROOT / "build"
 EXE_NAME = "AILearningAssistant"
 VERSION = "1.0"
+BUILTIN_KEY_FILE = BACKEND / "app" / "_builtin_key.py"  # 打包期临时生成，随后删除（已 gitignore）
 
 USAGE_TEXT = """历史学习助手 v1.0 —— 使用说明
 ====================================================
@@ -47,21 +48,17 @@ USAGE_TEXT = """历史学习助手 v1.0 —— 使用说明
 整个文件夹可以整体拷贝到别的电脑，数据一起带走（便携绿色版，免安装）。
 
 【AI 功能】
-AI 让软件能真·大模型地工作：史料总结、史料答疑、根据错题个性化出题、薄弱点分析。
-没有 .env 时也能用，只是会降级为本地规则引擎（资料检索式答疑 + 抽取式总结 + 统计分析）。
+本版本已内置阶跃 StepFun 大模型，装好即用，不需要任何配置：
+史料总结、史料答疑、按错题个性化出题、薄弱点分析都由大模型驱动。
 
-想开启大模型（两种方式，任选）：
+想换成自己的模型（可选，不影响使用）：
+打开左侧「AI 助手」→「配置 API Key」→ 选平台预设（智谱 GLM / DeepSeek / MiniMax 等）→
+粘贴自己的 Key → 保存并生效 → 点「检测 AI 连接」。
+随时可以点「恢复默认（阶跃）」切回内置默认。
 
-方式一（推荐，免改文件）：打开左侧「AI 助手」→「配置 API Key」→
-  平台预设选「阶跃星辰 StepFun」或「智谱 GLM」（两者都国内直连，不用代理）→
-  粘贴 Key → 保存并生效 → 点「检测 AI 连接」看到绿色"连接成功"即可。
-
-方式二：把 .env.example 复制为 .env（exe 同级），填写四行后重启程序。
-  国内可用：AI_BASE_URL=https://api.stepfun.com/v1  AI_MODEL=step-3.5-flash
-
-注意：阶跃要用 /v1 这条地址；/step_plan/v1 需要有效的 Step Plan 订阅，否则报 400。
-只有用境外接口（如 Google Gemini）才需要代理，在「配置 API Key → 代理地址」里填
-http://127.0.0.1:7897（换成你自己的端口）；提示"网络不通"多半就是代理没开。
+注意：阶跃的地址要用 https://api.stepfun.com/v1（/step_plan/v1 是订阅套餐专用，
+账号没订阅会报 400）。只有用境外平台（如 Google Gemini）才需要填代理地址，
+一般是 http://127.0.0.1:7897，换成你自己的端口。
 
 【浏览器没自动打开怎么办】
 手动打开浏览器，访问 http://127.0.0.1:8000
@@ -70,6 +67,8 @@ http://127.0.0.1:7897（换成你自己的端口）；提示"网络不通"多半
 【常见问题】
 - 杀毒软件误报：本程序由 Python 打包生成，未签名，可能被拦截；
   选择"允许运行/添加信任"即可。
+- 内置的 AI Key 是课程演示用的共享额度，够几个人做题；如果哪天报"余额不足/触发限流"，
+  换成自己的 Key 即可（上面「AI 功能」里的步骤）。
 - 想清空数据重新开始：关闭程序，删除 data 文件夹，重新启动程序会自动重建。
 """
 
@@ -100,6 +99,56 @@ def find_npm() -> str:
 
 def find_python() -> str:
     return sys.executable
+
+
+def _read_env_value(name: str) -> str:
+    """从 backend/.env 读一个值（本脚本只处理 KEY=VALUE 简单格式）。"""
+    env_path = BACKEND / ".env"
+    if not env_path.is_file():
+        return ""
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        if k.strip() == name:
+            return v.strip()
+    return ""
+
+
+def embed_builtin_key(enabled: bool) -> None:
+    """把 .env 里的 AI key 注入 _builtin_key.py，随 exe 冻结成「内置默认」。
+
+    这样分享包解压即用（默认走阶跃 StepFun），接收方仍可在界面里换成自己的
+    模型——用户配置的环境变量优先级高于内置 key。
+    用 --no-embed-key 构建则写入空值，等价于「必须自己配 key」。
+    """
+    key = _read_env_value("AI_API_KEY") if enabled else ""
+    BUILTIN_KEY_FILE.write_text(
+        '"""打包期自动生成：内置默认 AI key（不要提交到仓库）。\n\n'
+        "为空字符串时表示该构建不内置 key，用户需自行配置。\n"
+        '"""\n\n'
+        f'BUILTIN_API_KEY = "{key}"\n',
+        encoding="utf-8",
+    )
+    if key:
+        masked = key[:4] + "*" * 8 + key[-4:] if len(key) >= 10 else "****"
+        print(f"[note] 已内置默认 AI key（{masked}），分享包开箱即用；用 --no-embed-key 可关闭")
+    else:
+        print("[note] 未内置 AI key（--no-embed-key 或 .env 里没有 AI_API_KEY）")
+
+
+def clear_builtin_key() -> None:
+    """删除临时的 _builtin_key.py，避免 key 留在源码树里被误提交。"""
+    if not BUILTIN_KEY_FILE.exists():
+        return
+    try:
+        BUILTIN_KEY_FILE.unlink()
+    except OSError:
+        trash = BUILD / "_stale_builtin_key"
+        trash.mkdir(parents=True, exist_ok=True)
+        BUILTIN_KEY_FILE.replace(trash / f"_builtin_key_{uuid.uuid4().hex[:6]}.py")
+
 
 
 def build_frontend() -> None:
@@ -230,6 +279,11 @@ def main() -> None:
     parser.add_argument("--skip-frontend", action="store_true", help="跳过前端构建（复用 frontend/dist）")
     parser.add_argument("--zip-only", action="store_true", help="不重新构建，仅重新生成分享压缩包")
     parser.add_argument("--no-zip", action="store_true", help="构建但不生成分享压缩包")
+    parser.add_argument(
+        "--no-embed-key",
+        action="store_true",
+        help="不内置 AI key（默认会把 backend/.env 的 key 打进 exe，开箱即用）",
+    )
     args = parser.parse_args()
 
     if args.zip_only:
@@ -239,7 +293,11 @@ def main() -> None:
     if not args.skip_frontend:
         build_frontend()
     bundle_frontend()
-    build_exe()
+    try:
+        embed_builtin_key(not args.no_embed_key)
+        build_exe()
+    finally:
+        clear_builtin_key()  # 无论成功失败，都不把 key 留在源码树
     assemble_release()
     if not args.no_zip:
         make_zip()
