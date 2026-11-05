@@ -13,6 +13,8 @@
 幂等：同名知识点/题目/史料已存在则跳过。
 """
 
+import json
+import shutil
 import sqlite3
 import sys
 import uuid
@@ -107,6 +109,56 @@ def resolve_node(conn: sqlite3.Connection, code: str) -> str:
     ).fetchone():
         return chapter
     return ""
+
+
+def seed_pdf_materials(conn: sqlite3.Connection) -> int:
+    """把内置 PDF 史料按「用户上传」同款管线入库：
+
+    原件复制到 release/data/uploads/<uuid>.pdf，pypdf 提取正文，filetype=pdf。
+    这样史料列表里就是真正的 PDF 文件，AI 引用的是提取出的全文。
+    """
+    from pypdf import PdfReader
+
+    pdf_dir = ROOT / "backend" / "app" / "seed_data" / "pdfs"
+    manifest_path = pdf_dir / "manifest.json"
+    if not manifest_path.exists():
+        return 0
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    uploads = ROOT / "release" / "data" / "uploads"
+    uploads.mkdir(parents=True, exist_ok=True)
+    track_names = qushi.track_map()
+    added = 0
+    for m in manifest:
+        src = pdf_dir / m["file"]
+        if not src.exists():
+            continue
+        have = conn.execute(
+            "SELECT 1 FROM materials WHERE user_id=1 AND title=?", (m["title"],)
+        ).fetchone()
+        if have:
+            continue
+        save_name = uuid.uuid4().hex + ".pdf"
+        shutil.copy2(src, uploads / save_name)
+        try:
+            reader = PdfReader(str(uploads / save_name))
+            text = "\n".join((p.extract_text() or "").strip() for p in reader.pages)
+        except Exception as e:
+            (uploads / save_name).unlink(missing_ok=True)
+            print(f"  [skip] {m['file']} 解析失败：{e}")
+            continue
+        if len(text.strip()) < 500:
+            (uploads / save_name).unlink(missing_ok=True)
+            print(f"  [skip] {m['file']} 提取正文过短")
+            continue
+        name = track_names.get(m["track"], {}).get("name", m["track"])
+        conn.execute(
+            "INSERT INTO materials(user_id,uuid,title,course,filename,filetype,content,created_at)"
+            " VALUES(1,?,?,?,?,?,?,?)",
+            (uuid.uuid4().hex, m["title"], name, save_name, "pdf", text.strip(), now()),
+        )
+        added += 1
+    conn.commit()
+    return added
 
 
 def seed_materials(conn: sqlite3.Connection) -> int:
@@ -272,6 +324,7 @@ def main() -> int:
     log.append(f"知识点新增 {kp_added}，题目新增 {q_added}，节点无效跳过 {skipped}")
 
     log.append(f"内置史料新增 {seed_materials(conn)}")
+    log.append(f"PDF 史料新增 {seed_pdf_materials(conn)}")
     log.append(f"错题样本新增 {seed_wrong_book(conn)}")
     log.append(f"做题记录新增 {seed_practice(conn)}")
     log.append(f"复习任务新增 {seed_tasks(conn)}")
