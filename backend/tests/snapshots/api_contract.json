@@ -924,11 +924,19 @@
               "base_url": "string",
               "model": "string"
             },
+            "minimax": {
+              "base_url": "string",
+              "model": "string"
+            },
             "openrouter": {
               "base_url": "string",
               "model": "string"
             },
             "siliconflow": {
+              "base_url": "string",
+              "model": "string"
+            },
+            "stepfun": {
               "base_url": "string",
               "model": "string"
             },
@@ -961,8 +969,10 @@
         "dashscope",
         "deepseek",
         "gemini",
+        "minimax",
         "openrouter",
         "siliconflow",
+        "stepfun",
         "zhipu"
       ]
     },

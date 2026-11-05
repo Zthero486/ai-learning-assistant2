@@ -47,6 +47,7 @@ ALLOWED_EXT = {
 }
 MAX_UPLOAD_MB = 20
 CHUNK_SIZE = 500
+MAX_CONTEXT_CHARS = 4000  # 拼进 prompt 的资料上限（build_context 用）
 CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 app = FastAPI(title="AI 智能学习助手 API (v1)", version="1.0.0")
@@ -959,7 +960,7 @@ def generate_questions(body: dict, uid: int = Depends(require_user)):
                 "史料解读题必须引用材料原文片段，并问「反映了什么」「作者的立场」「该史料的史料价值」。"
                 '只输出 JSON 数组，每项 {"type":"题型","question":"题干","answer":"参考答案"}，'
                 f"共 {num} 题；答案必须能在材料中找到依据或符合史学共识，不得编造史实。",
-                f"知识点：{kp['title']}\n史料：\n{build_context(ai_helper.chunk_text(content, CHUNK_SIZE))}",
+                f"知识点：{kp['title']}\n史料：\n{build_context(ai_helper.chunk_text(context, CHUNK_SIZE))}",
             )
             questions = ai_helper.parse_questions_json(raw)
             source = "ai"

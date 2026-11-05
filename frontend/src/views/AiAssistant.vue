@@ -34,12 +34,14 @@
     <el-form label-width="90px">
       <el-form-item label="平台预设">
         <el-select v-model="config.preset" style="width:100%" @change="applyPreset">
-          <el-option label="Google Gemini（已配置）" value="gemini" />
+          <el-option label="Google Gemini（需代理）" value="gemini" />
           <el-option label="智谱 GLM（国内直连，永久免费）" value="zhipu" />
           <el-option label="硅基流动 SiliconFlow（9B 以下免费）" value="siliconflow" />
           <el-option label="阿里云百炼（新用户额度）" value="dashscope" />
           <el-option label="DeepSeek（付费，推理强）" value="deepseek" />
           <el-option label="OpenRouter（免费模型）" value="openrouter" />
+          <el-option label="MiniMax M Plan（订阅 Key）" value="minimax" />
+          <el-option label="阶跃 StepFun（国内直连）" value="stepfun" />
         </el-select>
       </el-form-item>
       <el-form-item label="API Key">

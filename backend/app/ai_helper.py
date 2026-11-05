@@ -18,7 +18,7 @@ from . import apppaths
 # ---------- v1 硬编码配置（v2 重构目标：迁移到统一配置中心） ----------
 DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"  # 智谱 GLM：永久免费额度
 DEFAULT_MODEL = "glm-4-flash"
-REQUEST_TIMEOUT = 60.0
+REQUEST_TIMEOUT = 90.0  # 出 5 道题实测要 20~25s，留足余量
 MAX_CONTEXT_CHARS = 4000  # 拼进 prompt 的资料片段上限
 
 # 常用免费/低价平台预设（套餐见 .env.example，切换只需改 .env 三行）
@@ -41,6 +41,18 @@ PROVIDER_PRESETS = {
     "gemini": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
         "model": "gemini-flash-latest",
+    },
+    # MiniMax M Plan 订阅：Key 要取「订阅管理 → M Plan」里的订阅 Key，不是按量付费 Key
+    "minimax": {
+        "base_url": "https://api.minimax.cn/v1",
+        "model": "MiniMax-M3.1-Flash",
+    },
+    # 阶跃星辰 StepFun：国内直连。
+    # 注意 /step_plan/v1 是订阅套餐专用地址，账号没有生效中的 Step Plan 会返回
+    # 400 "you have no active step plan subscription"；所以默认用 /v1（走账户额度）。
+    "stepfun": {
+        "base_url": "https://api.stepfun.com/v1",
+        "model": "step-3.5-flash",
     },
 }
 

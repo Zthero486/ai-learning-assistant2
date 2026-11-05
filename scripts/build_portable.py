@@ -204,12 +204,16 @@ def make_zip() -> None:
     archive = RELEASE.parent / f"历史学习助手-v{VERSION}-便携版.zip"
     inner = f"历史学习助手-v{VERSION}"
     # .env 里有 AI Key，token.key 是令牌签名密钥（每台机器首次启动自建），都不进分享包
-    skip_names = {"run.log", ".env", "token.key"}
+    # 注意 .env.bak / .env.20261105-183545.bak 这类备份同样含 Key，用前缀整体排除
+    skip_names = {"run.log", "token.key"}
     skip_prefix = ("app.db.bak",)
     count = 0
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         for path in sorted(RELEASE.rglob("*")):
             if path.name in skip_names or path.name.startswith(skip_prefix):
+                continue
+            # 排除 .env 及其一切备份，但保留 .env.example 供接收方参考
+            if path.name.startswith(".env") and path.name != ".env.example":
                 continue
             rel = path.relative_to(RELEASE)
             zf.write(path, f"{inner}/{rel.as_posix()}")
