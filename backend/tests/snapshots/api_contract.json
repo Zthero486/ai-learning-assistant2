@@ -88,6 +88,22 @@
         "422"
       ]
     },
+    "GET /api/ai/tools": {
+      "operation_id": "ai_tools_api_ai_tools_get",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
     "GET /api/auth/me": {
       "operation_id": "me_api_auth_me_get",
       "params": [
@@ -140,6 +156,12 @@
           "name": "kp_id",
           "required": false,
           "schema": "integer"
+        },
+        {
+          "in": "query",
+          "name": "track",
+          "required": false,
+          "schema": "string"
         }
       ],
       "request_body": null,
@@ -168,6 +190,18 @@
         {
           "in": "query",
           "name": "course",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "query",
+          "name": "node_code",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "query",
+          "name": "track",
           "required": false,
           "schema": "string"
         }
@@ -282,6 +316,50 @@
         "422"
       ]
     },
+    "GET /api/syllabus": {
+      "operation_id": "get_syllabus_api_syllabus_get",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "query",
+          "name": "track",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "GET /api/syllabus/node/{code}": {
+      "operation_id": "get_syllabus_node_api_syllabus_node__code__get",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "path",
+          "name": "code",
+          "required": true,
+          "schema": "string"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
     "GET /api/sync/export": {
       "operation_id": "sync_export_api_sync_export_get",
       "params": [
@@ -348,6 +426,28 @@
         {
           "in": "query",
           "name": "era",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "query",
+          "name": "track",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "GET /api/tracks": {
+      "operation_id": "list_tracks_api_tracks_get",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
           "required": false,
           "schema": "string"
         }
@@ -492,6 +592,27 @@
     },
     "POST /api/ai/ask": {
       "operation_id": "ai_ask_api_ai_ask_post",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "POST /api/ai/chat": {
+      "operation_id": "ai_chat_api_ai_chat_post",
       "params": [
         {
           "in": "header",
@@ -691,6 +812,27 @@
     },
     "POST /api/practice/submit": {
       "operation_id": "submit_practice_api_practice_submit_post",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "POST /api/profile/track": {
+      "operation_id": "set_track_api_profile_track_post",
       "params": [
         {
           "in": "header",
@@ -996,11 +1138,11 @@
         "status": 400
       },
       "list": {
-        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"era\": \"string\", \"id\": \"integer\", \"material_id\": \"integer\", \"material_title\": \"string\", \"question_count\": \"integer\", \"title\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\", \"year_end\": \"null\", \"year_start\": \"null\"}>",
+        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"era\": \"string\", \"exam_type\": \"string\", \"id\": \"integer\", \"material_id\": \"integer\", \"material_title\": \"string\", \"node_code\": \"string\", \"question_count\": \"integer\", \"title\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\", \"year_end\": \"null\", \"year_start\": \"null\"}>",
         "status": 200
       },
       "list_filtered": {
-        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"era\": \"string\", \"id\": \"integer\", \"material_id\": \"integer\", \"material_title\": \"string\", \"question_count\": \"integer\", \"title\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\", \"year_end\": \"null\", \"year_start\": \"null\"}>",
+        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"era\": \"string\", \"exam_type\": \"string\", \"id\": \"integer\", \"material_id\": \"integer\", \"material_title\": \"string\", \"node_code\": \"string\", \"question_count\": \"integer\", \"title\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\", \"year_end\": \"null\", \"year_start\": \"null\"}>",
         "status": 200
       },
       "update": {
@@ -1025,6 +1167,7 @@
           "filename": "string",
           "filetype": "string",
           "id": "integer",
+          "node_code": "string",
           "title": "string",
           "user_id": "integer",
           "uuid": "string"
@@ -1060,11 +1203,11 @@
         "status": 404
       },
       "list": {
-        "body": "list<{\"answer\": \"string\", \"created_at\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"question\": \"string\", \"source\": \"string\", \"type\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\"}>",
+        "body": "list<{\"answer\": \"string\", \"created_at\": \"string\", \"exam_type\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"question\": \"string\", \"source\": \"string\", \"type\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\"}>",
         "status": 200
       },
       "list_by_kp": {
-        "body": "list<{\"answer\": \"string\", \"created_at\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"question\": \"string\", \"source\": \"string\", \"type\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\"}>",
+        "body": "list<{\"answer\": \"string\", \"created_at\": \"string\", \"exam_type\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"question\": \"string\", \"source\": \"string\", \"type\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\"}>",
         "status": 200
       },
       "submit": {
@@ -1140,13 +1283,77 @@
         "status": 404
       }
     },
+    "GET /api/tracks": {
+      "node": {
+        "body": {
+          "code": "string",
+          "events": "list<any>",
+          "kps": "list<any>",
+          "level": "integer",
+          "path": "string",
+          "period": "string",
+          "question_count": "integer",
+          "title": "string"
+        },
+        "status": 200
+      },
+      "node_404": {
+        "body": {
+          "detail": "string"
+        },
+        "status": 404
+      },
+      "set_track": {
+        "body": {
+          "seeded_events": "integer",
+          "track": "string"
+        },
+        "status": 200
+      },
+      "set_track_400": {
+        "body": {
+          "detail": "string"
+        },
+        "status": 400
+      },
+      "syllabus": {
+        "body": {
+          "chapter_count": "integer",
+          "chapters": "list<{\"code\": \"string\", \"kp\": \"integer\", \"period\": \"string\", \"q\": \"integer\", \"sections\": \"list<{\\\"code\\\": \\\"string\\\", \\\"kp\\\": \\\"integer\\\", \\\"order\\\": \\\"integer\\\", \\\"q\\\": \\\"integer\\\", \\\"title\\\": \\\"string\\\"}>\", \"title\": \"string\"}>",
+          "section_count": "integer",
+          "total_kp": "integer",
+          "total_q": "integer",
+          "track": "string",
+          "track_name": "string"
+        },
+        "status": 200
+      },
+      "syllabus_shape": {
+        "chapters": 10,
+        "sections": 70
+      },
+      "track_keys": [
+        "party",
+        "prc",
+        "reform",
+        "socialism"
+      ],
+      "tracks": {
+        "body": {
+          "current": "string",
+          "exam_types": "list<{\"key\": \"string\", \"label\": \"string\"}>",
+          "tracks": "list<{\"ask\": \"string\", \"blurb\": \"string\", \"book\": \"string\", \"chapters\": \"integer\", \"color\": \"string\", \"full\": \"string\", \"key\": \"string\", \"name\": \"string\", \"period\": \"string\", \"publisher\": \"string\", \"sections\": \"integer\", \"selected\": \"boolean\"}>"
+        },
+        "status": 200
+      }
+    },
     "GET /api/wrong-book": {
       "list": {
-        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"correct_streak\": \"integer\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"user_id\": \"integer\", \"uuid\": \"string\", \"wrong_count\": \"integer\"}>",
+        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"correct_streak\": \"integer\", \"error_type\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"next_review_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"user_id\": \"integer\", \"uuid\": \"string\", \"wrong_count\": \"integer\"}>",
         "status": 200
       },
       "list_all": {
-        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"correct_streak\": \"integer\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"user_id\": \"integer\", \"uuid\": \"string\", \"wrong_count\": \"integer\"}>",
+        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"correct_streak\": \"integer\", \"error_type\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"next_review_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"user_id\": \"integer\", \"uuid\": \"string\", \"wrong_count\": \"integer\"}>",
         "status": 200
       },
       "list_has_item": true,

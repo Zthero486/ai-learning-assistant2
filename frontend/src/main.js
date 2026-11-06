@@ -17,6 +17,7 @@ import Tasks from './views/Tasks.vue'
 import Practice from './views/Practice.vue'
 import WrongBook from './views/WrongBook.vue'
 import AiAssistant from './views/AiAssistant.vue'
+import AiChat from './views/AiChat.vue'
 import Sync from './views/Sync.vue'
 import Login from './views/Login.vue'
 import { auth } from './api'
@@ -35,7 +36,9 @@ const router = createRouter({
     { path: '/tasks', name: 'tasks', component: Tasks, meta: { title: '复习任务' } },
     { path: '/practice', name: 'practice', component: Practice, meta: { title: '练习' } },
     { path: '/wrong-book', name: 'wrongBook', component: WrongBook, meta: { title: '错题本' } },
-    { path: '/ai', name: 'ai', component: AiAssistant, meta: { title: 'AI 助手' } },
+    // /ai 是主入口（对话式，AI 可直接读写数据）；/ai-tools 保留原来的答疑/总结/薄弱点工具台
+    { path: '/ai', name: 'ai', component: AiChat, meta: { title: 'AI 对话' } },
+    { path: '/ai-tools', name: 'aiTools', component: AiAssistant, meta: { title: 'AI 工具' } },
     { path: '/sync', name: 'sync', component: Sync, meta: { title: '数据同步' } },
   ],
 })

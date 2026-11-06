@@ -55,6 +55,51 @@ async function request(url, options = {}) {
   return resp.json()
 }
 
+// AI 对话（SSE）：POST 带 body，只能走 fetch + ReadableStream，EventSource 不支持 POST。
+// 服务端事件：step/start、step/end、error、done
+async function streamChat(payload, { onEvent, signal } = {}) {
+  const resp = await fetch('/api/ai/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token()}` },
+    body: JSON.stringify(payload),
+    signal,
+  })
+  if (!resp.ok) {
+    if (resp.status === 401) {
+      auth.clear()
+      window.location.assign('/login')
+      throw new Error('登录已过期，请重新登录')
+    }
+    let detail = `请求失败 (${resp.status})`
+    try { const d = await resp.json(); if (d.detail) detail = d.detail } catch { /* ignore */ }
+    throw new Error(detail)
+  }
+  const ctype = resp.headers.get('content-type') || ''
+  // 未配置 key 时后端直接回 JSON，这里兜住，别让界面卡在「思考中」
+  if (!ctype.includes('text/event-stream')) {
+    const data = await resp.json()
+    onEvent?.({ type: 'done', reply: data.reply || '', steps: data.steps || [], mode: data.mode })
+    return
+  }
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let cut
+    while ((cut = buffer.indexOf('\n\n')) >= 0) {
+      const chunk = buffer.slice(0, cut)
+      buffer = buffer.slice(cut + 2)
+      for (const line of chunk.split('\n')) {
+        if (!line.startsWith('data: ')) continue
+        try { onEvent?.(JSON.parse(line.slice(6))) } catch { /* 半包/心跳，忽略 */ }
+      }
+    }
+  }
+}
+
 // 带 Authorization 的文件下载（浏览器 <a> 下载带不了请求头，所以走 fetch+blob）
 async function downloadFile(url, filename) {
   const resp = await fetch(url, { headers: { Authorization: `Bearer ${auth.token()}` } })
@@ -134,6 +179,9 @@ export default {
   aiSummarize: (body) => request('/api/ai/summarize', { method: 'POST', body: JSON.stringify(body) }),
   aiAsk: (body) => request('/api/ai/ask', { method: 'POST', body: JSON.stringify(body) }),
   aiWeakAnalysis: (body) => request('/api/ai/weak-analysis', { method: 'POST', body: JSON.stringify(body) }),
+  aiTools: () => request('/api/ai/tools'),
+  // AI 对话窗口（Agent）：onEvent 收 SSE 事件
+  aiChat: (payload, handlers) => streamChat(payload, handlers),
   // 跨机同步
   syncConfig: (body) => request('/api/sync/config', { method: 'POST', body: JSON.stringify(body) }),
   syncExport: () => request('/api/sync/export'),

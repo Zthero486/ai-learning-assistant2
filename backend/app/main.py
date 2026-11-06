@@ -25,12 +25,12 @@ from urllib.parse import quote
 import httpx
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pypdf import PdfReader
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import ai_helper, apppaths, auth, qushi
+from . import ai_agent, ai_helper, apppaths, auth, qushi
 from . import sync as sync_mod
 
 # ==================== v1 硬编码配置（v2 重构目标：统一配置中心） ====================
@@ -102,6 +102,7 @@ def init_db() -> None:
             filename TEXT NOT NULL,
             filetype TEXT NOT NULL,
             content TEXT NOT NULL,
+            node_code TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS knowledge_points(
@@ -332,6 +333,7 @@ def migrate_qushi(conn: sqlite3.Connection) -> None:
 
     plan = (
         ("users", "track", "TEXT NOT NULL DEFAULT ''"),
+        ("materials", "node_code", "TEXT NOT NULL DEFAULT ''"),
         ("knowledge_points", "node_code", "TEXT NOT NULL DEFAULT ''"),
         ("knowledge_points", "exam_type", "TEXT NOT NULL DEFAULT ''"),
         ("questions", "exam_type", "TEXT NOT NULL DEFAULT ''"),
@@ -683,6 +685,7 @@ def health():
 async def upload_material(
     file: UploadFile = File(...),
     course: str = Form("未分类"),
+    node_code: str = Form(""),
     uid: int = Depends(require_user),
 ):
     ext = Path(file.filename or "").suffix.lower()
@@ -707,7 +710,8 @@ async def upload_material(
 
     conn = db()
     cur = conn.execute(
-        "INSERT INTO materials(user_id,uuid,title,course,filename,filetype,content,created_at) VALUES(?,?,?,?,?,?,?,?)",
+        "INSERT INTO materials(user_id,uuid,title,course,filename,filetype,content,node_code,created_at)"
+        " VALUES(?,?,?,?,?,?,?,?,?)",
         (
             uid,
             uuid.uuid4().hex,
@@ -716,6 +720,7 @@ async def upload_material(
             save_name,
             ALLOWED_EXT[ext],
             content,
+            (node_code or "").strip(),
             now(),
         ),
     )
@@ -1944,6 +1949,78 @@ def ai_weak_analysis(body: dict, uid: int = Depends(require_user)):
         "建议：优先重做这些知识点的错题，再针对关联资料复习后完成一轮新练习。",
     ]
     return {"mode": "fallback", "weak_kps": weak_kps, "advice": "\n".join(lines)}
+
+
+@app.post("/api/ai/chat")
+def ai_chat(body: dict, uid: int = Depends(require_user)):
+    """AI 对话窗口（Agent 模式）：模型可调用工具直接读写本软件的数据。
+
+    与 /api/ai/ask 的区别：那个是「一次问答」，这个能连续多轮调工具——
+    检索教材/史料 → 建知识点 → 生成资料入库 → 出题 → 建复习任务，
+    学生说一句「帮我学第三章」，AI 自己把整套动作跑完。
+
+    body:
+      messages: [{role:"user"|"assistant", content:"..."}]（前端持有历史）
+      allow_write: 是否允许写入（默认 True；关掉后只剩 8 个只读工具）
+      stream: 默认 True 走 SSE；False 则一次性返回 JSON（脚本/测试用）
+    """
+    track = _user_track(uid)
+    if not qushi.valid_track(track):
+        raise HTTPException(400, "请先选择要学习的课程")
+    messages = body.get("messages")
+    if not isinstance(messages, list) or not messages:
+        raise HTTPException(400, "messages 不能为空")
+    allow_write = bool(body.get("allow_write", True))
+    ctx = ai_agent.AgentContext(uid, track, db, now)
+
+    if not ai_helper.is_available():
+        tip = (
+            "当前没有可用的 AI Key，对话模式需要大模型支持。\n"
+            "请到「AI 助手 → 配置 API Key」选择平台（内置阶跃 StepFun 通常已可用）并保存；\n"
+            "在此之前，答疑、资料总结仍可用规则引擎，只是不能自动生成内容。"
+        )
+        if body.get("stream") is False:
+            return {"mode": "unavailable", "reply": tip, "steps": [], "track": track}
+        return JSONResponse(status_code=200, content={"mode": "unavailable", "reply": tip})
+
+    if body.get("stream") is False:
+        result = ai_agent.run(ctx, messages, allow_write)
+        result["mode"] = "ai"
+        result["track"] = track
+        result["track_name"] = qushi.track_map()[track]["name"]
+        return result
+
+    def gen():
+        yield "retry: 3000\n\n"
+        for ev in ai_agent.run_events(ctx, messages, allow_write):
+            yield "data: " + json.dumps(ev, ensure_ascii=False) + "\n\n"
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@app.get("/api/ai/tools")
+def ai_tools(uid: int = Depends(require_user)):
+    """给界面展示「AI 能干什么」：工具清单 + 是否可写。"""
+    return {
+        "tools": [
+            {
+                "name": name,
+                "write": bool(t["write"]),
+                "description": t["spec"]["function"]["description"],
+            }
+            for name, t in ai_agent.TOOLS.items()
+        ],
+        "max_rounds": ai_agent.MAX_ROUNDS,
+        "max_tool_calls": ai_agent.MAX_TOOL_CALLS,
+    }
 
 
 @app.get("/api/tasks/due-soon")

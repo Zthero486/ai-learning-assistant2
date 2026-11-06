@@ -16,12 +16,13 @@
         <el-menu-item index="/tasks"><el-icon><List /></el-icon>复习任务</el-menu-item>
         <el-menu-item index="/practice"><el-icon><EditPen /></el-icon>自测</el-menu-item>
         <el-menu-item index="/wrong-book"><el-icon><WarningFilled /></el-icon>错题本</el-menu-item>
-        <el-menu-item index="/ai"><el-icon><ChatDotRound /></el-icon>AI 助手</el-menu-item>
+        <el-menu-item index="/ai"><el-icon><ChatDotRound /></el-icon>AI 对话</el-menu-item>
       </el-menu>
       <div class="user-box">
         <div class="search-hint" @click="$refs.gs.open()">🔍 搜索 <span class="kbd">Ctrl+K</span></div>
         <div class="user-name">👤 {{ username }}</div>
         <div class="mini-links">
+          <router-link to="/ai-tools" class="mini-link">AI 工具台</router-link>
           <router-link to="/welcome" class="mini-link">切换课程</router-link>
           <router-link to="/sync" class="mini-link">数据同步</router-link>
           <el-button size="small" type="danger" plain @click="logout">退出</el-button>

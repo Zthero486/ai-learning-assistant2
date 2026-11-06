@@ -252,6 +252,49 @@ def call_llm(system_prompt: str, user_prompt: str) -> str:
     return resp.json()["choices"][0]["message"]["content"]
 
 
+def chat_completion(messages: list, tools: list = None, temperature: float = 0.4) -> dict:
+    """多轮对话 + 工具调用：返回 assistant 的 message 字典（含 tool_calls）。
+
+    某些 OpenAI 兼容平台不认 `tools` 字段（直接 400）。这里做一次降级重试：
+    去掉工具再问一遍，模型仍能纯文本作答，不至于让对话整条挂掉。
+    """
+    api_key = get_api_key()
+    if not api_key:
+        raise RuntimeError("未配置 AI_API_KEY")
+    payload = {
+        "model": get_model(),
+        "messages": messages,
+        "temperature": temperature,
+    }
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
+
+    def _post(body: dict):
+        resp = httpx.post(
+            f"{get_base_url()}/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json=body,
+            timeout=REQUEST_TIMEOUT,
+            proxy=get_proxy() or None,
+        )
+        if resp.status_code >= 400:
+            detail = (resp.text or "")[:500]
+            raise httpx.HTTPStatusError(
+                f"HTTP {resp.status_code}: {detail}", request=resp.request, response=resp
+            )
+        return resp.json()["choices"][0]["message"]
+
+    try:
+        return _post(payload)
+    except httpx.HTTPStatusError as e:
+        if tools and e.response.status_code in (400, 404, 422):
+            payload.pop("tools", None)
+            payload.pop("tool_choice", None)
+            return _post(payload)
+        raise
+
+
 def test_connection() -> dict:
     """连通性自检：发一条最短请求，验证 key / 地址 / 模型三项配置是否正确。"""
     if not is_available():

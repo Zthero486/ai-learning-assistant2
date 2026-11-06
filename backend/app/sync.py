@@ -46,7 +46,7 @@ def build_export(conn: sqlite3.Connection) -> dict:
         "users": [dict(u) for u in users],
         "materials": rows("""
             SELECT m.uuid, u.uuid AS owner, m.title, m.course, m.filename, m.filetype,
-                   m.content, m.created_at
+                   m.content, m.node_code, m.created_at
             FROM materials m JOIN users u ON u.id = m.user_id"""),
         "knowledge_points": rows("""
             SELECT k.uuid, u.uuid AS owner, m.uuid AS material_uuid,
@@ -181,7 +181,8 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
         if not r.get("uuid") or uuid_exists("materials", r["uuid"]):
             continue
         conn.execute(
-            "INSERT INTO materials(user_id,uuid,title,course,filename,filetype,content,created_at) VALUES(?,?,?,?,?,?,?,?)",
+            "INSERT INTO materials(user_id,uuid,title,course,filename,filetype,content,node_code,created_at)"
+            " VALUES(?,?,?,?,?,?,?,?,?)",
             (
                 resolve_user(r["owner"]),
                 r["uuid"],
@@ -190,6 +191,7 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
                 r.get("filename", ""),
                 r.get("filetype", "txt"),
                 r.get("content", ""),
+                r.get("node_code", ""),
                 r.get("created_at", ""),
             ),
         )
