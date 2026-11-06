@@ -16,16 +16,30 @@
 import json
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Callable
 
 from . import ai_helper, qushi
 
-MAX_ROUNDS = 6          # 一次对话最多几轮「模型→工具→模型」
-MAX_TOOL_CALLS = 16     # 一次对话最多执行多少次工具
+MAX_ROUNDS = 8          # 一次对话最多几轮「模型→工具→模型」（学整章这类长任务 6 轮不够）
+MAX_TOOL_CALLS = 20     # 一次对话最多执行多少次工具
 MAX_TOOL_RESULT = 3000  # 单个工具结果回灌给模型的字符上限
 MAX_MATERIAL_CHARS = 20000   # AI 生成资料入库的字数上限
 MAX_QUESTIONS_PER_CALL = 10
+
+# 出题工具的参数错误提示：必须带可照抄的示例，模型才能下一轮自己改对
+_QUESTIONS_HINT = ('questions 必须是 JSON 数组（不是字符串），每项形如'
+                   ' {"type":"单选题","question":"题干","answer":"参考答案"}，'
+                   'type 和 answer 可省略')
+
+# 单次对话各写入工具的批数上限（防"全流程狂写"烧光调用预算）
+WRITE_BUDGETS = {
+    "create_knowledge_point": 6,
+    "create_questions": 4,
+    "create_task": 5,
+    "create_material": 2,
+    "create_event": 2,
+}
 
 EXAM_TYPES = {
     "recall": "史实识记",
@@ -55,6 +69,7 @@ class AgentContext:
         self.track = track
         self.conn = conn_factory
         self.now = now_fn
+        self.written: dict = {}  # 写入工具 -> 本对话成功写入的批数（预算控制用）
 
     @property
     def track_name(self) -> str:
@@ -448,10 +463,19 @@ def _tool_create_questions(ctx: AgentContext, args: dict) -> dict:
     if not kp_id:
         return {"ok": False, "error": "kp_id 必须是数字，请先用 list_knowledge_points 查询"}
     items = args.get("questions") or []
+    # 模型常见错误：把数组写成 JSON 字符串、或只传了一个对象 —— 这里都接住，
+    # 别让一次格式抖动变成"重试 8 次全失败"（2026-11-07 真机评测发现的问题）
+    if isinstance(items, str):
+        try:
+            items = json.loads(items)
+        except json.JSONDecodeError:
+            return {"ok": False, "error": _QUESTIONS_HINT}
+    if isinstance(items, dict):
+        items = [items]
     if not isinstance(items, list) or not items:
-        return {"ok": False, "error": "questions 必须是非空数组"}
+        return {"ok": False, "error": _QUESTIONS_HINT}
     if len(items) > MAX_QUESTIONS_PER_CALL:
-        return {"ok": False, "error": f"一次最多 {MAX_QUESTIONS_PER_CALL} 题"}
+        items = items[:MAX_QUESTIONS_PER_CALL]  # 超量截断，别整批打回重来
     conn = ctx.conn()
     try:
         kp = conn.execute(
@@ -459,36 +483,73 @@ def _tool_create_questions(ctx: AgentContext, args: dict) -> dict:
         ).fetchone()
         if not kp:
             return {"ok": False, "error": f"知识点 {kp_id} 不存在"}
-        ids = []
-        for q in items:
+        ids, skipped = [], []
+        for i, q in enumerate(items):
+            if not isinstance(q, dict):
+                skipped.append(f"第{i + 1}项不是对象")
+                continue
             question = str(q.get("question") or "").strip()
-            answer = str(q.get("answer") or "").strip()
             if not question:
+                skipped.append(f"第{i + 1}项缺 question")
                 continue
             cur = conn.execute(
                 "INSERT INTO questions(user_id,uuid,kp_id,type,question,answer,source,created_at)"
                 " VALUES(?,?,?,?,?,?,?,?)",
                 (ctx.uid, uuid.uuid4().hex, kp_id, str(q.get("type") or "简答"),
-                 question, answer, "ai", ctx.now()),
+                 question, str(q.get("answer") or "").strip(), "ai", ctx.now()),
             )
             ids.append(cur.lastrowid)
         conn.commit()
     finally:
         conn.close()
-    return {"ok": True, "created": len(ids), "ids": ids, "kp_title": kp["title"],
-            "message": f"已为「{kp['title']}」新增 {len(ids)} 道题"}
+    if not ids:
+        return {"ok": False, "error": "没有解析出任何题目（" + "；".join(skipped[:3]) + "）。" + _QUESTIONS_HINT}
+    msg = f"已为「{kp['title']}」新增 {len(ids)} 道题"
+    if skipped:
+        msg += f"，另有 {len(skipped)} 条格式不对被跳过"
+    return {"ok": True, "created": len(ids), "ids": ids, "skipped": skipped,
+            "kp_title": kp["title"], "message": msg}
+
+
+def _parse_due(text: str, today: str = "") -> str | None:
+    """宽容解析截止日期：ISO / 2026年11月12日 / 2026/11/12 / 明天 / 后天。
+
+    模型经常拿不准日期格式（真机评测里 5 连败的根因），这里替它兜一层。
+    解析不出返回 None，由调用方报错并附上今天的日期帮它换算。
+    """
+    s = (text or "").strip()
+    if not s:
+        return None
+    try:
+        base = datetime.fromisoformat(today).date() if today else datetime.now().date()
+    except ValueError:
+        base = datetime.now().date()
+    rel = {"今天": 0, "明天": 1, "后天": 2, "大后天": 3}
+    if s in rel:
+        return (base + timedelta(days=rel[s])).isoformat()
+    try:
+        return datetime.fromisoformat(s).date().isoformat()
+    except ValueError:
+        pass
+    for fmt in ("%Y-%m-%d", "%Y年%m月%d日", "%Y年%m月", "%Y-%m"):
+        for cand in (s, s.replace("年", "-").replace("月", "-").replace("日", "").replace("号", "")
+                     .replace("/", "-").replace(".", "-")):
+            try:
+                return datetime.strptime(cand, fmt).date().isoformat()
+            except ValueError:
+                continue
+    return None
 
 
 def _tool_create_task(ctx: AgentContext, args: dict) -> dict:
     title = (args.get("title") or "").strip()
     if not title:
         return {"ok": False, "error": "title 不能为空"}
-    due = (args.get("due_date") or "").strip() or None
-    if due:
-        try:
-            datetime.fromisoformat(due)
-        except ValueError:
-            return {"ok": False, "error": "due_date 需形如 2026-11-12"}
+    today = (ctx.now() or "")[:10]
+    due = _parse_due(args.get("due_date") or "", today)
+    if args.get("due_date") and not due:
+        return {"ok": False, "error": f"due_date 没认出来（收到「{args.get('due_date')}」）；"
+                                      f"今天是 {today}，请换算成 2026-11-12 这样的具体日期"}
     conn = ctx.conn()
     try:
         cur = conn.execute(
@@ -673,19 +734,20 @@ TOOLS = {
     ),
     "create_questions": dict(
         _spec("create_questions",
-              "给某个知识点批量新建练习题。题型用「单选题/名词解释/时间排序/简答/材料分析/论述」，答案要符合权威简史。",
+              "给某个知识点批量新建练习题。questions 必须是 JSON 数组（不是字符串），"
+              "每项都要有 question 和 answer；题型用「单选题/名词解释/时间排序/简答/材料分析/论述」。",
               {"kp_id": _I("知识点 id（来自 list_knowledge_points）"),
                "questions": {
                    "type": "array",
-                   "description": "题目数组，最多 10 项",
+                   "description": '题目数组，最多 10 项，每项如 {"type":"单选题","question":"…","answer":"…"}',
                    "items": {
                        "type": "object",
                        "properties": {
-                           "type": _S("题型"),
+                           "type": _S("题型，缺省为简答"),
                            "question": _S("题干"),
                            "answer": _S("参考答案"),
                        },
-                       "required": ["type", "question", "answer"],
+                       "required": ["question", "answer"],
                    },
                }},
               ["kp_id", "questions"], write=True),
@@ -720,10 +782,35 @@ def execute_tool(ctx: AgentContext, name: str, args: dict, allow_write: bool) ->
         return {"ok": False, "error": f"没有名为 {name} 的工具"}
     if tool["write"] and not allow_write:
         return {"ok": False, "error": "当前会话关闭了写入权限，只能查不能改；请提示用户在界面上打开「允许 AI 写入」"}
+    # 单次对话写入预算：模型一旦进入"全流程狂写"模式，会把调用预算烧光，
+    # 反而没执行学生点名要的那个动作（真机评测 #4 两次翻车的根因）
+    cap = WRITE_BUDGETS.get(name)
+    if cap is not None and ctx.written.get(name, 0) >= cap:
+        return {"ok": False,
+                "error": f"本轮对话{name}已成功 {ctx.written[name]} 批（上限 {cap}），"
+                         "先收尾向学生汇报；他需要更多会再开口"}
     try:
-        return tool["fn"](ctx, args or {})
+        result = tool["fn"](ctx, args or {})
     except Exception as e:  # 工具内部异常不该打断整轮对话，回给模型让它换参数重试
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    if cap is not None and result.get("ok"):
+        ctx.written[name] = ctx.written.get(name, 0) + 1
+    return result
+
+
+def _today_line() -> str:
+    """提示词里的今天：让模型能自己算「明天/下周」。"""
+    now = datetime.now()
+    return f"{now:%Y-%m-%d} 星期{weekdays[now.weekday()]}"
+
+
+_WEEKDAYS = "一二三四五六日"
+
+
+def _today_line() -> str:
+    """提示词里的今天：让模型能自己算「明天/下周」。"""
+    now = datetime.now()
+    return f"{now:%Y-%m-%d} 星期{_WEEKDAYS[now.weekday()]}"
 
 
 def system_prompt(ctx: AgentContext) -> str:
@@ -732,11 +819,15 @@ def system_prompt(ctx: AgentContext) -> str:
 
 工作方式（自主执行，不要反问一堆再动手）：
 1. 涉及具体史实、章节、原文的问题，先调 search_content / find_node / list_syllabus 核实，再回答。
-2. 学生说「帮我整理/生成/入库」时，直接把结果写进库（create_knowledge_point / create_material / create_questions / create_task），写完用一句话说明写了什么、在哪一页能看到。
+2. 学生说「帮我整理/生成/入库」时，直接把结果写进库（create_knowledge_point / create_material / create_questions / create_task），写完用一句话说明写了什么、在哪一页能看到。**整理资料类任务检索 1-2 次拿到素材就写**，写完就收尾，不要反复检索。
 3. 学生说「帮我学第 X 章」时，按「查目录 → 检索已有内容 → 补知识点 → 出 2-3 道题 → 建复习任务」的顺序自主跑完，最后给一个三步以内的行动建议。
 4. 写作前先用 list_knowledge_points 查重，避免重复入库；一次别超过 10 条知识点或 10 道题。
 5. 互不依赖的工具在同一轮里一起调用（例如同时查目录和检索史料），别一个工具磨一轮；正常请求应在 2-3 轮内给结论。
-6. 学生问「我为什么老错」或让你分析错题时：先 get_wrong_book 看题，逐题判断错因并调 tag_wrong_error 落库（概念混淆/时序错位/史论脱节/细节缺失/审题偏差/记忆不牢），最后按错因归并成 2-3 条改法。归因要基于题目本身，看不出就写「记忆不牢」，别硬编。
+6. 工具参数必须是**合法 JSON 对象**：数组字段（如 create_questions 的 questions）要传真正的 JSON 数组，不能是字符串；参数报错时看清错误里的示例，改对再调，不要原样重试。
+7. 你一共有 8 轮、20 次调用。**长任务（学整章、建一套题）读类工具合计最多 3 次**：定位章节用 find_node（比 list_syllabus 快），检索一次就够；省下的轮次一定用来完成写入（建知识点→出题→建任务），宁可少而完整，不要读得多、写得少。
+8. 写入有预算：知识点 6 条、出题 4 批、任务 5 条、资料 2 篇。**学生点名的动作优先**——比如他要的是复习任务，就先建任务；到预算上限就收尾汇报，别恋战。
+9. 学生问「我为什么老错」或让你分析错题时：先 get_wrong_book 看题，逐题判断错因并调 tag_wrong_error 落库（概念混淆/时序错位/史论脱节/细节缺失/审题偏差/记忆不牢），最后按错因归并成 2-3 条改法。归因要基于题目本身，看不出就写「记忆不牢」，别硬编。
+10. 学生要求处理**当前课程以外**的内容（比如你在教《党史》他却要新中国史的知识点/题目）：**不要借当前课程的名义写入**，直接提醒他到软件右上角「切换课程」再回来找你，一次说清即可。
 
 内容要求：
 - 口径必须符合权威简史（《百年奋斗重大成就和历史经验的决议》、四本官方简史、二十大报告），重大年份、会议、文件名称不得写错。
@@ -744,7 +835,8 @@ def system_prompt(ctx: AgentContext) -> str:
 - 只谈《{ctx.track_name}》范围；学生问别的课程，提醒他到「切换课程」，不要混着讲。
 - 回答用中文，先给结论，再分点展开；不超过 500 字，需要长文时先给框架。
 
-当前课程：{ctx.track_name}（track={ctx.track}）。章节 code 形如 {ctx.track}-03-02，写入必须用真实的节 code。"""
+当前课程：{ctx.track_name}（track={ctx.track}）。章节 code 形如 {ctx.track}-03-02，写入必须用真实的节 code。
+今天是 {_today_line()}。学生说「明天/下周/这几天」这类相对日期时，先换算成具体日期再调工具。"""
 
 
 def _force_final(convo: list) -> str:
@@ -786,6 +878,7 @@ def run_events(ctx: AgentContext, messages: list, allow_write: bool = True):
 
     steps = []
     used = 0
+    failures: dict = {}  # (tool, 参数) -> 上次失败原因：原样重试没有意义，直接短路
     for round_no in range(1, MAX_ROUNDS + 1):
         try:
             msg = ai_helper.chat_completion(convo, tools=specs)
@@ -820,8 +913,17 @@ def run_events(ctx: AgentContext, messages: list, allow_write: bool = True):
             if used >= MAX_TOOL_CALLS:
                 result = {"ok": False, "error": "工具调用次数已达上限，请直接基于已有信息作答"}
             else:
-                result = execute_tool(ctx, name, args, allow_write)
-                used += 1
+                key = (name, raw_args if isinstance(raw_args, str)
+                       else json.dumps(args, ensure_ascii=False, sort_keys=True))
+                if key in failures:
+                    result = {"ok": False,
+                              "error": f"原样重试没有意义：刚才同样的调用已失败（{failures[key]}）。"
+                                       "请修改参数，或先调只读工具核实"}
+                else:
+                    result = execute_tool(ctx, name, args, allow_write)
+                    used += 1
+                    if not result.get("ok", True):
+                        failures[key] = str(result.get("error", ""))[:120]
 
             step = {"tool": name, "args": args, "ok": bool(result.get("ok", True)),
                     "summary": _summarize(name, result)}

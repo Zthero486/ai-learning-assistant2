@@ -28,6 +28,9 @@
     </el-container>
 
     <GlobalSearch ref="gs" />
+
+    <!-- 全局浮动 AI：除 /ai 完整页外，每个界面右下角都能呼出 -->
+    <AiFloat v-if="showAiFloat" />
   </el-container>
 </template>
 
@@ -35,11 +38,12 @@
 // v1.2：侧栏底部加搜索入口、当前用户与退出
 // v2.0：四史改造——侧栏显示当前选中的那一门课
 // v2.1：手机/平板适配——窄屏隐藏侧栏，改抽屉 + 顶栏
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Fold } from '@element-plus/icons-vue'
 import { auth } from './api'
 import SideNav from './components/SideNav.vue'
+import AiFloat from './components/AiFloat.vue'
 import GlobalSearch from './components/GlobalSearch.vue'
 
 const TRACKS = {
@@ -81,6 +85,9 @@ function logout() {
   drawer.value = false
   router.push('/login')
 }
+// 浮动 AI 只在登录后的非 /ai 页面出现（/ai 是同一个对话的完整页）
+const showAiFloat = computed(() => route.path !== '/ai' && !!auth.token())
+
 function openSearch() {
   // 抽屉打开时先关抽屉，再delay一点让动画走完再弹搜索框
   setTimeout(() => gs.value?.open(), isMobile.value ? 260 : 0)

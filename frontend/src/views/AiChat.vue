@@ -85,7 +85,7 @@
     </footer>
 
     <!-- 工具能力 -->
-    <el-dialog v-model="toolsVisible" title="AI 在这个软件里能做什么" width="620px">
+    <el-dialog v-model="toolsVisible" title="AI 在这个软件里能做什么" width="620px" append-to-body>
       <p class="muted" style="margin-top:0">
         只读工具任何时候都可用；写入工具受上方「允许 AI 写入」开关控制。AI 没有任何删除权限。
       </p>
@@ -103,7 +103,7 @@
     </el-dialog>
 
     <!-- AI 配置 -->
-    <el-dialog v-model="configVisible" title="配置 AI 大模型" width="560px">
+    <el-dialog v-model="configVisible" title="配置 AI 大模型" width="560px" append-to-body>
       <el-alert
         type="info"
         :closable="false"
