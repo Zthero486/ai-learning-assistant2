@@ -49,6 +49,14 @@
     </div>
 
     <footer class="chat-foot">
+      <div v-if="voice.state.value === 'listening'" class="voice-tip">
+        <span class="rec-dot"></span>
+        {{ voice.mode.value === 'web' ? '正在听你说…（再点麦克风结束）' : '正在录音…（再点麦克风结束）' }}
+      </div>
+      <div v-else-if="voice.state.value === 'processing'" class="voice-tip processing">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        正在转成文字…
+      </div>
       <el-input
         v-model="draft"
         type="textarea"
@@ -59,6 +67,18 @@
       />
       <div class="foot-actions">
         <span class="foot-hint">AI 会真实读写软件数据，写入的动作在上面以卡片显示</span>
+        <el-tooltip :content="micTip" placement="top">
+          <el-button
+            class="mic-btn"
+            :class="{ recording: voice.state.value === 'listening' }"
+            circle
+            :type="voice.state.value === 'listening' ? 'danger' : 'default'"
+            :disabled="busy"
+            @click="toggleMic"
+          >
+            <el-icon :size="17"><Microphone /></el-icon>
+          </el-button>
+        </el-tooltip>
         <el-button v-if="busy" @click="stop">停止</el-button>
         <el-button type="primary" :loading="busy" :disabled="!draft.trim()" @click="send()">发送</el-button>
       </div>
@@ -128,6 +148,8 @@
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute } from 'vue-router'
+import { Microphone } from '@element-plus/icons-vue'
+import { useVoiceInput } from '../composables/voice'
 import api, { auth } from '../api'
 
 const route = useRoute()
@@ -163,6 +185,29 @@ const trackColor = computed(() => TRACKS[auth.track()]?.color || '#909399')
 const msgs = ref(loadMsgs())
 const draft = ref('')
 const busy = ref(false)
+
+// ---------- 语音输入：说话 → 填进输入框（可改可删，再自己点发送）----------
+const voiceBase = ref('') // 开始录音前输入框里已有的内容，识别结果接在后面
+const voice = useVoiceInput({
+  onText: (text, { final }) => {
+    draft.value = (voiceBase.value + (final ? text : ' ' + text)).trimStart()
+    if (final) voiceBase.value = ''
+  },
+})
+const micTip = computed(() => {
+  if (voice.state.value === 'listening') return '点击麦克风结束输入'
+  if (voice.state.value === 'processing') return '正在转成文字…'
+  return voice.mode.value === 'web'
+    ? '语音输入（浏览器实时识别）'
+    : '语音输入（录完由服务端识别）'
+})
+function toggleMic() {
+  if (voice.state.value === 'idle') {
+    voiceBase.value = draft.value ? draft.value + ' ' : ''
+    nextTick(() => document.querySelector('.mic-btn')?.blur())
+  }
+  voice.toggle()
+}
 const allowWrite = ref(loadPrefs().allowWrite !== false)
 const aiSource = ref('none')
 const scrollEl = ref(null)
@@ -507,6 +552,23 @@ onMounted(async () => {
 .foot-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .foot-hint { margin-right: auto; font-size: 12px; color: #b1b7c2; }
 .muted { color: #909399; font-size: 13px; }
+
+/* 语音输入 */
+.voice-tip {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: #e24b4a; margin-bottom: 6px;
+}
+.voice-tip.processing { color: #185fa5; }
+.rec-dot {
+  width: 9px; height: 9px; border-radius: 50%; background: #e24b4a;
+  animation: rec-blink 1s ease-in-out infinite;
+}
+@keyframes rec-blink { 50% { opacity: 0.25; } }
+.mic-btn.recording { animation: mic-pulse 1.2s ease-in-out infinite; }
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(226, 75, 74, 0.45); }
+  50% { box-shadow: 0 0 0 7px rgba(226, 75, 74, 0.12); }
+}
 
 /* 手机/竖屏平板：顶栏按钮换行、气泡更宽、快捷指令单列，输入区贴底 */
 @media (max-width: 768px) {

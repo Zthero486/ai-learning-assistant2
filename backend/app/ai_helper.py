@@ -214,7 +214,8 @@ def config_snapshot() -> dict:
 
 def reset_runtime_config() -> None:
     """清掉运行时 AI 配置，回落到内置默认（阶跃）或规则引擎。"""
-    for name in ("AI_API_KEY", "AI_BASE_URL", "AI_MODEL", "AI_PROXY", "DEEPSEEK_API_KEY"):
+    for name in ("AI_API_KEY", "AI_BASE_URL", "AI_MODEL", "AI_PROXY", "DEEPSEEK_API_KEY",
+                 "AI_ASR_URL", "AI_ASR_KEY", "AI_ASR_MODEL"):
         os.environ.pop(name, None)
     path = apppaths.env_file()
     if not path.exists():
@@ -226,6 +227,55 @@ def reset_runtime_config() -> None:
             continue
         keep.append(line)
     path.write_text("\n".join(keep).rstrip("\n") + "\n", encoding="utf-8")
+
+
+# ---------- 语音识别 ASR（可选，OpenAI 兼容 /audio/transcriptions）----------
+# 用途：AI 对话页的麦克风按钮。浏览器自带的 Web Speech API 免费但依赖境外服务
+# （Chrome 走 Google，国内多半连不上），所以留一条服务端 ASR 的路：
+#   AI_ASR_URL=https://api.siliconflow.cn/v1/audio/transcriptions   （硅基流动，SenseVoice 免费档）
+#   AI_ASR_KEY=sk-xxx                                               （可省略，复用 AI_API_KEY）
+#   AI_ASR_MODEL=FunAudioLLM/SenseVoiceSmall
+DEFAULT_ASR_MODEL = "FunAudioLLM/SenseVoiceSmall"
+ASR_TIMEOUT = 60.0
+MAX_AUDIO_BYTES = 15 * 1024 * 1024  # 一段话的录音到不了这个量级，超了多半是没停麦
+
+
+def get_asr_url() -> str:
+    return (os.environ.get("AI_ASR_URL") or "").strip().rstrip("/")
+
+
+def get_asr_key() -> str:
+    """语音识别可以单独配 key；不配则复用大模型 key（同平台时正好省一步）。"""
+    return (os.environ.get("AI_ASR_KEY") or get_api_key()).strip()
+
+
+def get_asr_model() -> str:
+    return (os.environ.get("AI_ASR_MODEL") or DEFAULT_ASR_MODEL).strip()
+
+
+def asr_available() -> bool:
+    return bool(get_asr_url() and get_asr_key())
+
+
+def transcribe(filename: str, content: bytes, content_type: str = "") -> str:
+    """把一段录音转成文字。失败抛异常，由路由层兜成 4xx/5xx。"""
+    url = get_asr_url()
+    if not url:
+        raise RuntimeError("未配置语音识别服务（AI_ASR_URL）")
+    if not get_asr_key():
+        raise RuntimeError("未配置语音识别的 API key")
+    resp = httpx.post(
+        url,
+        headers={"Authorization": f"Bearer {get_asr_key()}"},
+        files={"file": (filename or "audio.webm", content, content_type or "audio/webm")},
+        data={"model": get_asr_model()},
+        timeout=ASR_TIMEOUT,
+        proxy=get_proxy() or None,
+    )
+    if resp.status_code >= 400:
+        raise RuntimeError(f"语音识别服务返回 HTTP {resp.status_code}: {(resp.text or '')[:200]}")
+    payload = resp.json()
+    return (payload.get("text") or "").strip()
 
 
 def call_llm(system_prompt: str, user_prompt: str) -> str:

@@ -682,6 +682,8 @@ def health():
         "ai_source": ai_helper.key_source(),
         "ai_base_url": ai_helper.get_base_url() if ai_helper.is_available() else None,
         "ai_model": ai_helper.get_model() if ai_helper.is_available() else None,
+        # 服务端语音识别是否可用（浏览器自带识别由前端自己探测）
+        "asr_available": ai_helper.asr_available(),
     }
 
 
@@ -2107,6 +2109,30 @@ def ai_tools(uid: int = Depends(require_user)):
         "max_rounds": ai_agent.MAX_ROUNDS,
         "max_tool_calls": ai_agent.MAX_TOOL_CALLS,
     }
+
+
+@app.post("/api/ai/transcribe")
+async def ai_transcribe(file: UploadFile = File(...), uid: int = Depends(require_user)):
+    """录音转文字：AI 对话页麦克风按钮的服务端兜底。
+
+    浏览器自带的 Web Speech API 优先（零配置），但它只在 localhost / HTTPS 下有，
+    Chrome 还依赖境外服务。所以支持在 .env 配一个 OpenAI 兼容的 ASR 接口
+    （如硅基流动 SenseVoice，免费档），前端录音上传到这里转发。
+    """
+    if not ai_helper.asr_available():
+        raise HTTPException(
+            400,
+            "未配置语音识别服务：在 .env 加 AI_ASR_URL（OpenAI 兼容 /audio/transcriptions 地址）"
+            "即可启用；不配置时请用 Edge/Chrome 浏览器自带的语音识别",
+        )
+    content = await file.read()
+    if len(content) > ai_helper.MAX_AUDIO_BYTES:
+        raise HTTPException(400, "录音超过 15MB，说短一点或检查是否忘了停止")
+    try:
+        text = ai_helper.transcribe(file.filename or "audio.webm", content, file.content_type or "")
+    except Exception as e:
+        raise HTTPException(502, f"语音识别失败：{e}")
+    return {"text": text}
 
 
 @app.get("/api/lan")

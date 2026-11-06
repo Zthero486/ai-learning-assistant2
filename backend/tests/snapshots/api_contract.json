@@ -707,6 +707,27 @@
         "422"
       ]
     },
+    "POST /api/ai/transcribe": {
+      "operation_id": "ai_transcribe_api_ai_transcribe_post",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": {
+        "content": [
+          "form:[]:required=[]"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
     "POST /api/ai/weak-analysis": {
       "operation_id": "ai_weak_analysis_api_ai_weak_analysis_post",
       "params": [
@@ -1164,6 +1185,7 @@
         "ai_base_url": "null",
         "ai_model": "null",
         "ai_source": "string",
+        "asr_available": "boolean",
         "status": "string"
       },
       "status": 200
