@@ -82,6 +82,14 @@ try:
     tools = get("/api/ai/tools", tok)
     w("工具数:", len(tools["tools"]), "写入工具:", sum(1 for t in tools["tools"] if t["write"]))
 
+    # 冻结环境里 fsrs 是否真的能 import：algorithm 返回 ladder 就说明打包漏了依赖
+    due = get("/api/review/due", tok)
+    near = due["upcoming"][0]["srs_interval_text"] if due.get("upcoming") else "-"
+    w("复习队列: 算法", due["algorithm"], "到期", due["due_count"], "最近一条", near)
+
+    wb = get("/api/wrong-book", tok)
+    w("错题排期字段:", sorted(k for k in wb[0] if k.startswith("srs_")) if wb else "错题本为空")
+
     d = post("/api/ai/chat", {
         "messages": [{"role": "user", "content": "这门课第三章讲什么？用两句话概括，不要调用工具"}],
         "stream": False, "allow_write": False,

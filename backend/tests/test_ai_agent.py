@@ -29,7 +29,7 @@ def test_工具数量与权限划分():
     read_only = ai_agent.tool_specs(False)
     full = ai_agent.tool_specs(True)
     assert len(read_only) == 8
-    assert len(full) == 13
+    assert len(full) == 14
     assert all(t["function"]["name"] not in {x["function"]["name"] for x in read_only}
                for t in full if t not in read_only)
     assert all(not t["write"] for t in ai_agent.TOOLS.values() if t["spec"] in read_only)
@@ -125,5 +125,51 @@ def test_未选课时对话接口报错():
 def test_工具清单接口(client):
     client.post("/api/profile/track", json={"track": "party"})
     data = client.get("/api/ai/tools").json()
-    assert len(data["tools"]) == 13
-    assert sum(1 for t in data["tools"] if t["write"]) == 5
+    assert len(data["tools"]) == 14
+    assert sum(1 for t in data["tools"] if t["write"]) == 6
+
+
+def _wrong_id(client) -> int:
+    """造一条真实错题，返回 wrong_book.id。"""
+    client.post("/api/profile/track", json={"track": "party"})
+    kp = client.post("/api/knowledge-points", json={"title": "遵义会议", "course": "党史"}).json()
+    client.post("/api/questions/generate", json={"kp_id": kp["id"], "num": 1})
+    qid = [q for q in client.get("/api/questions").json() if q["kp_id"] == kp["id"]][0]["id"]
+    client.post("/api/practice/submit", json={"question_id": qid, "correct": False})
+    return client.get("/api/wrong-book").json()[0]["id"]
+
+
+def test_错因归因打标签(client):
+    wid = _wrong_id(client)
+    ctx = ai_agent.AgentContext(client.user_id, "party", app_main.db, app_main.now)
+    r = ai_agent.execute_tool(
+        ctx, "tag_wrong_error",
+        {"wrong_id": wid, "error_type": "sequence", "advice": "先把时间轴串一遍"},
+        allow_write=True,
+    )
+    assert r["ok"] is True and r["error_type"] == "时序错位"
+    item = client.get("/api/wrong-book").json()[0]
+    assert item["error_type"] == "时序错位"
+    # 也接受直接写中文分类
+    r2 = ai_agent.execute_tool(ctx, "tag_wrong_error",
+                               {"wrong_id": wid, "error_type": "记忆不牢"}, allow_write=True)
+    assert r2["ok"] is True
+    assert client.get("/api/wrong-book").json()[0]["error_type"] == "记忆不牢"
+
+
+def test_错因归因的边界(client):
+    wid = _wrong_id(client)
+    ctx = ai_agent.AgentContext(client.user_id, "party", app_main.db, app_main.now)
+    # 分类不在词表里 → 拒绝，提示可选值
+    bad = ai_agent.execute_tool(ctx, "tag_wrong_error",
+                                {"wrong_id": wid, "error_type": "心情不好"}, allow_write=True)
+    assert bad["ok"] is False and "error_type" in bad["error"]
+    # 别人的错题 → 拒绝（用户隔离）
+    other = ai_agent.AgentContext(client.user_id + 999999, "party", app_main.db, app_main.now)
+    mine = ai_agent.execute_tool(other, "tag_wrong_error",
+                                 {"wrong_id": wid, "error_type": "concept"}, allow_write=True)
+    assert mine["ok"] is False
+    # 只读模式 → 拒绝
+    ro = ai_agent.execute_tool(ctx, "tag_wrong_error",
+                               {"wrong_id": wid, "error_type": "concept"}, allow_write=False)
+    assert ro["ok"] is False and "写入权限" in ro["error"]

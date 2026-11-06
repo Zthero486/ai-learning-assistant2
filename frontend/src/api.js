@@ -162,6 +162,8 @@ export default {
   listQuestions: (kpId) => request(`/api/questions${kpId ? `?kp_id=${kpId}` : ''}`),
   submitPractice: (body) => request('/api/practice/submit', { method: 'POST', body: JSON.stringify(body) }),
   wrongBook: (onlyUnresolved = true) => request(`/api/wrong-book?only_unresolved=${onlyUnresolved}`),
+  // 今日复习队列（FSRS 排期到期的错题）
+  reviewDue: (limit = 20) => request(`/api/review/due?limit=${limit}`),
   updateWrong: (id, body) => request(`/api/wrong-book/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   exportWrongCsv: (onlyUnresolved = false) =>
     downloadFile(`/api/wrong-book/export/csv?only_unresolved=${onlyUnresolved}`, `错题本-${new Date().toISOString().slice(0, 10)}.csv`),

@@ -70,7 +70,7 @@ def build_export(conn: sqlite3.Connection) -> dict:
         "wrong_book": rows("""
             SELECT w.uuid, u.uuid AS owner, q.uuid AS question_uuid,
                    w.wrong_count, w.resolved, w.review_marked, w.last_wrong_at,
-                   w.next_review_at, w.error_type
+                   w.next_review_at, w.error_type, w.srs
             FROM wrong_book w
             JOIN users u ON u.id = w.user_id
             JOIN questions q ON q.id = w.question_id"""),
@@ -279,14 +279,23 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
             "SELECT id, wrong_count FROM wrong_book WHERE question_id=? AND user_id=?", (qid, owner)
         ).fetchone()
         if exist:
+            # 累加错误次数；本地还没排过期就把对端的排期/卡片状态补上
             conn.execute(
-                "UPDATE wrong_book SET wrong_count=wrong_count+? WHERE id=?",
-                (int(r.get("wrong_count", 1)), exist["id"]),
+                "UPDATE wrong_book SET wrong_count=wrong_count+?,"
+                " next_review_at=CASE WHEN next_review_at='' THEN ? ELSE next_review_at END,"
+                " srs=CASE WHEN srs='' THEN ? ELSE srs END"
+                " WHERE id=?",
+                (
+                    int(r.get("wrong_count", 1)),
+                    r.get("next_review_at", ""),
+                    r.get("srs", ""),
+                    exist["id"],
+                ),
             )
         else:
             conn.execute(
                 "INSERT INTO wrong_book(user_id,uuid,question_id,wrong_count,resolved,review_marked,"
-                "last_wrong_at,next_review_at,error_type) VALUES(?,?,?,?,?,?,?,?,?)",
+                "last_wrong_at,next_review_at,error_type,srs) VALUES(?,?,?,?,?,?,?,?,?,?)",
                 (
                     owner,
                     r["uuid"],
@@ -297,6 +306,7 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
                     r.get("last_wrong_at", ""),
                     r.get("next_review_at", ""),
                     r.get("error_type", ""),
+                    r.get("srs", ""),
                 ),
             )
             stats["wrong_book"] += 1

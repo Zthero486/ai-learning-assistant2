@@ -127,7 +127,10 @@
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useRoute } from 'vue-router'
 import api, { auth } from '../api'
+
+const route = useRoute()
 
 const TRACKS = {
   party: { name: '党史', color: '#c0392b' },
@@ -173,6 +176,7 @@ const quickPrompts = [
   '根据我已有的知识点出 5 道题，覆盖单选和材料分析',
   '我最近哪里薄弱？给我排一周的复习任务',
   '讲一下我错题本里错得最多的那个考点',
+  '帮我看看错题为什么老错，把错因标出来并给改法',
 ]
 
 function loadMsgs() {
@@ -401,7 +405,15 @@ async function openTools() {
   }
 }
 
-onMounted(loadStatus)
+onMounted(async () => {
+  await loadStatus()
+  // 从错题本/仪表盘带问题跳过来时（/ai?q=...）直接替他发出去，少点一次
+  const q = typeof route.query.q === 'string' ? route.query.q.trim() : ''
+  if (q) {
+    draft.value = q
+    await send(q)
+  }
+})
 </script>
 
 <style scoped>

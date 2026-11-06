@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from pypdf import PdfReader
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import ai_agent, ai_helper, apppaths, auth, qushi
+from . import ai_agent, ai_helper, apppaths, auth, qushi, srs
 from . import sync as sync_mod
 
 # ==================== v1 硬编码配置（v2 重构目标：统一配置中心） ====================
@@ -155,6 +155,7 @@ def init_db() -> None:
             resolved INTEGER NOT NULL DEFAULT 0,
             review_marked INTEGER NOT NULL DEFAULT 0,
             last_wrong_at TEXT NOT NULL,
+            srs TEXT NOT NULL DEFAULT '',
             UNIQUE(question_id, user_id),
             FOREIGN KEY(question_id) REFERENCES questions(id) ON DELETE CASCADE
         );
@@ -325,6 +326,7 @@ def migrate_qushi(conn: sqlite3.Connection) -> None:
     - questions.exam_type：思政考法维度（识记/时序/史论/现实）
     - events.kind / node_code：会议 / 事件 / 文件，以及它属于哪一章
     - wrong_book.next_review_at / error_type：间隔复习排期与错因归类
+    - wrong_book.srs：FSRS 卡片状态（JSON），详见 app/srs.py
 
     全部 ALTER ADD COLUMN，幂等，不重建表。
     """
@@ -341,6 +343,8 @@ def migrate_qushi(conn: sqlite3.Connection) -> None:
         ("events", "node_code", "TEXT NOT NULL DEFAULT ''"),
         ("wrong_book", "next_review_at", "TEXT NOT NULL DEFAULT ''"),
         ("wrong_book", "error_type", "TEXT NOT NULL DEFAULT ''"),
+        # FSRS 卡片状态（JSON），移植自 py-fsrs；空串 = 还没排过 / 未装 fsrs
+        ("wrong_book", "srs", "TEXT NOT NULL DEFAULT ''"),
     )
     changed = False
     for table, col, decl in plan:
@@ -1202,8 +1206,9 @@ def generate_questions(body: dict, uid: int = Depends(require_user)):
 
 
 PERSONAL_MAX_WRONG = 8  # 一次个性化出题最多参考多少条错题
-# 错题间隔复习的天数阶梯（艾宾浩斯式）：错得越多，下次复习越晚
-REVIEW_INTERVALS = (1, 2, 4, 7, 15)
+# 旧的艾宾浩斯式天数阶梯已由 FSRS 取代（见 app/srs.py），保留别名只为兼容
+# 老脚本/老数据的引用；实际排期一律走 srs.review()，缺 fsrs 时由它内部退回这张表。
+REVIEW_INTERVALS = srs.FALLBACK_INTERVALS
 
 
 @app.post("/api/questions/generate-personal")
@@ -1319,6 +1324,15 @@ def list_questions(kp_id: int = None, uid: int = Depends(require_user)):
 # 连续答对几次算「掌握」，移出活跃错题库（一次答对可能是蒙的）
 MASTERY_STREAK = 2
 
+# 错题本里参与排期计算的列（保持一处定义，改列名只改这里）
+_SRS_COLS = "id, wrong_count, correct_streak, resolved, next_review_at, last_wrong_at, srs"
+
+
+def _wrong_row(conn: sqlite3.Connection, qid, uid: int):
+    return conn.execute(
+        f"SELECT {_SRS_COLS} FROM wrong_book WHERE question_id=? AND user_id=?", (qid, uid)
+    ).fetchone()
+
 
 @app.post("/api/practice/submit")
 def submit_practice(body: dict, uid: int = Depends(require_user)):
@@ -1334,17 +1348,20 @@ def submit_practice(body: dict, uid: int = Depends(require_user)):
         "INSERT INTO practice_records(user_id,uuid,question_id,user_answer,correct,created_at) VALUES(?,?,?,?,?,?)",
         (uid, uuid.uuid4().hex, qid, answer, correct, now()),
     )
+    prev = _wrong_row(conn, qid, uid)
+    # FSRS 排期（app/srs.py）：答错 → Again，答对 → Good。
+    # 没装 fsrs 时自动退回旧的天数阶梯，返回结构不变，前端无感。
+    plan = srs.review(prev if prev is not None else {"wrong_count": 1}, correct=bool(correct))
     if not correct:
-        # 间隔复习：错得越多，下一次复习越往后（1/2/4/7/15 天），答对则由 correct_streak 出库
-        days = REVIEW_INTERVALS[min(int(body.get("wrong_count") or 1) - 1, len(REVIEW_INTERVALS) - 1)]
-        next_at = (datetime.now() + timedelta(days=days)).isoformat(timespec="seconds")
+        # 答错：累加次数、清连续答对、按 FSRS 重新排队（错得多不一定排得晚，
+        # 但难度会上升，间隔自然拉长）
         conn.execute(
             """INSERT INTO wrong_book(user_id,uuid,question_id,wrong_count,last_wrong_at,
-                                      next_review_at,error_type)
-               VALUES(?,?,?,?,?,?,?)
+                                      next_review_at,error_type,srs)
+               VALUES(?,?,?,?,?,?,?,?)
                ON CONFLICT(question_id, user_id) DO UPDATE SET wrong_count=wrong_count+1,
                resolved=0, correct_streak=0, last_wrong_at=excluded.last_wrong_at,
-               next_review_at=excluded.next_review_at,
+               next_review_at=excluded.next_review_at, srs=excluded.srs,
                error_type=CASE WHEN excluded.error_type<>'' THEN excluded.error_type
                                ELSE wrong_book.error_type END""",
             (
@@ -1353,36 +1370,69 @@ def submit_practice(body: dict, uid: int = Depends(require_user)):
                 qid,
                 1,
                 now(),
-                next_at,
+                plan["next_review_at"],
                 (body.get("error_type") or "").strip(),
+                plan["srs"],
             ),
         )
-    else:
-        # 答对：连续答对计数 +1，达到 MASTERY_STREAK 次才移出活跃错题库
-        # （错一次可能是蒙对，所以不一次就对就删）
+    elif prev is not None:
+        # 答对：连对计数 +1，写回新的排期；连对达标或间隔已跨过长期记忆阈值就出库
+        streak = int(prev["correct_streak"] or 0) + 1
+        mastered = streak >= MASTERY_STREAK or plan["long_term"]
         conn.execute(
-            "UPDATE wrong_book SET correct_streak=correct_streak+1,"
-            " resolved=CASE WHEN correct_streak+1>=? THEN 1 ELSE resolved END"
+            "UPDATE wrong_book SET correct_streak=?, resolved=?, next_review_at=?, srs=?"
             " WHERE question_id=? AND user_id=?",
-            (MASTERY_STREAK, qid, uid),
+            (streak, 1 if mastered else 0, plan["next_review_at"], plan["srs"], qid, uid),
         )
     conn.commit()
+    row = _wrong_row(conn, qid, uid)
     conn.close()
-    row = None
-    conn = db()
-    row = conn.execute(
-        "SELECT resolved, correct_streak, wrong_count FROM wrong_book"
-        " WHERE question_id=? AND user_id=?",
-        (qid, uid),
-    ).fetchone()
-    conn.close()
+    due, in_days = srs.due_state(row["next_review_at"]) if row else (False, 0)
+    light = dict(row) if row else None
+    if light:
+        light.pop("srs", None)  # 原始卡片 JSON 不下发，需要指标就看 schedule
     return {
         "recorded": True,
         "correct": bool(correct),
         # 前端据此提示「已连对 1/2，再对一次就移出错题本」
-        "wrong_book": dict(row) if row else None,
+        "wrong_book": light,
         "mastery_streak": MASTERY_STREAK,
+        # 本次排期结果：「下次复习：2 天后」，前端直接展示，不用自己算
+        "schedule": {
+            "algorithm": plan["algorithm"],
+            "next_review_at": plan["next_review_at"],
+            "interval_days": plan["interval_days"],
+            "interval_text": srs.describe(plan["interval_days"]),
+            "due": due,
+            "days_until": in_days,
+            "stability": plan["stability"],
+            "difficulty": plan["difficulty"],
+            "long_term": plan["long_term"],
+        },
     }
+
+
+def _decorate_wrong(rows: list, now_dt: datetime | None = None) -> list:
+    """给错题行补上排期展示字段（到期没 / 还有几天 / 掌握度）。
+
+    计算放在后端而不是前端，是为了让「今日复习」「已到期」的判定口径
+    只有一处 —— 前端换个时区也不会算错。
+    """
+    now_dt = now_dt or datetime.now()
+    out = []
+    for r in rows:
+        d = dict(r)
+        raw_srs = d.pop("srs", "")  # 卡片原始 JSON 不下发，前端只用解出来的指标
+        due, days = srs.due_state(d.get("next_review_at", ""), now_dt)
+        d["srs_due"] = due
+        d["srs_days_until"] = days
+        d["srs_interval_text"] = srs.describe_interval(d.get("next_review_at"), now_dt)
+        meta = srs.card_meta(raw_srs, now_dt)
+        d["srs_stability"] = meta["stability"]
+        d["srs_difficulty"] = meta["difficulty"]
+        d["srs_retrievability"] = meta["retrievability"]
+        out.append(d)
+    return out
 
 
 @app.get("/api/wrong-book")
@@ -1399,7 +1449,39 @@ def wrong_book(only_unresolved: bool = True, uid: int = Depends(require_user)):
     sql += " ORDER BY w.last_wrong_at DESC"
     rows = conn.execute(sql, params).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return _decorate_wrong(rows)
+
+
+@app.get("/api/review/due")
+def review_due(limit: int = 20, uid: int = Depends(require_user)):
+    """今日该复习的错题（FSRS 排期到期），按逾期程度排序。
+
+    错题本按「错的时间」倒序看，复习队列按「该复习的时间」正序看 ——
+    两者是不同的视图：错题本是档案，这里是今天的作业。
+    """
+    conn = db()
+    rows = conn.execute(
+        """SELECT w.*, q.question, q.answer, q.kp_id, k.title AS kp_title,
+                  (SELECT COUNT(*) FROM practice_records pr WHERE pr.question_id=q.id) AS attempts
+           FROM wrong_book w JOIN questions q ON q.id=w.question_id
+           LEFT JOIN knowledge_points k ON k.id=q.kp_id
+           WHERE w.user_id=? AND w.resolved=0""",
+        (uid,),
+    ).fetchall()
+    conn.close()
+    items = _decorate_wrong(rows)
+    due = sorted([d for d in items if d["srs_due"]], key=lambda d: d["srs_days_until"])
+    upcoming = sorted(
+        [d for d in items if not d["srs_due"] and d["next_review_at"]],
+        key=lambda d: d["next_review_at"],
+    )
+    return {
+        "items": due[: max(1, min(int(limit or 20), 100))],
+        "due_count": len(due),
+        # 今天没有要复习的时候，用最近几条安抚一下：「3 天后再来」
+        "upcoming": upcoming[:3],
+        "algorithm": "fsrs" if srs.AVAILABLE else "ladder",
+    }
 
 
 @app.patch("/api/wrong-book/{wid}")

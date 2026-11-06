@@ -1,5 +1,21 @@
 <template>
   <div>
+    <!-- 今日复习提醒：FSRS 排期到期就顶上来，别的页面都不打扰 -->
+    <el-alert
+      v-if="dueWrong > 0"
+      class="due-banner"
+      type="warning"
+      show-icon
+      :closable="false"
+      :title="`今天有 ${dueWrong} 道错题到了复习时间`"
+    >
+      <template #default>
+        <span class="muted">趁热打铁过一遍，比重新学一遍省一半时间。</span>
+        <el-button size="small" type="warning" plain style="margin-left: 10px" @click="$router.push('/wrong-book')">
+          去复习
+        </el-button>
+      </template>
+    </el-alert>
     <el-row :gutter="16">
       <el-col :xs="12" :sm="12" :md="6" v-for="card in totalCards" :key="card.label">
         <el-card class="page-card stat-card" @click="$router.push(card.to)">
@@ -55,6 +71,7 @@ import api from '../api'
 
 const stats = ref({ totals: {}, per_kp: [] })
 const dueTasks = ref([])
+const dueWrong = ref(0)
 const aiAvailable = ref(null)
 const aiSource = ref('none')
 const aiModel = ref('')
@@ -81,6 +98,8 @@ onMounted(async () => {
   try {
     stats.value = await api.statsOverview()
     dueTasks.value = await api.dueSoon(3)
+    // 今日复习只看条数，不拉整页数据
+    dueWrong.value = (await api.reviewDue(1)).due_count || 0
     const h = await api.aiHealth()
     aiAvailable.value = h.ai_available
     aiSource.value = h.ai_source || 'none'
@@ -92,6 +111,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.due-banner { margin-bottom: 14px; }
 .num { font-size: 28px; font-weight: 700; margin-top: 6px; }
 .stat-card { cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }
 .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(64, 158, 255, 0.18); }

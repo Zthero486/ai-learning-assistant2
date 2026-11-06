@@ -80,17 +80,22 @@ async function submit(q) {
   const r = await api.submitPractice({ question_id: q.id, answer: ans, correct })
   answers.value[q.id] = ''
   revealed.value[q.id] = false
+  // FSRS 排期结果：答错/答对都会给「下次复习」，直接告诉学生省得自己算
+  const sched = (r && r.schedule) || {}
+  const when = sched.interval_text ? `，${sched.interval_text}后再复习` : ''
   if (!correct) {
-    ElMessage.error('已记入错题本 ✗')
+    ElMessage.error(`已记入错题本 ✗${when}`)
     return
   }
   const wb = r && r.wrong_book
   if (wb && wb.resolved) {
-    ElMessage.success('答对 ✓ 已掌握，已移出错题本')
+    ElMessage.success(`答对 ✓ 已掌握，已移出错题本${when}`)
   } else if (wb && wb.correct_streak > 0) {
-    ElMessage.success(`答对 ✓ 已连对 ${wb.correct_streak}/${r.mastery_streak}，再对一次就移出错题本`)
+    ElMessage.success(
+      `答对 ✓ 已连对 ${wb.correct_streak}/${r.mastery_streak}，再对一次就移出错题本${when}`,
+    )
   } else {
-    ElMessage.success('记为正确 ✓')
+    ElMessage.success(`记为正确 ✓${when}`)
   }
 }
 

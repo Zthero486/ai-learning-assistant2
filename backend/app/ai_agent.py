@@ -34,6 +34,17 @@ EXAM_TYPES = {
     "apply": "现实联系",
 }
 
+# 错题归因的分类（移植 educational-tutor-ai 的「错因分析」思路，落到本项目字段上）。
+# 只做「一类错因」而不是打分表：学生看错题时最需要知道的是「我下次该怎么改」。
+ERROR_TYPES = {
+    "concept": "概念混淆",
+    "sequence": "时序错位",
+    "relation": "史论脱节",
+    "detail": "细节缺失",
+    "reading": "审题偏差",
+    "memory": "记忆不牢",
+}
+
 
 class AgentContext:
     """一次对话的上下文：谁、学哪门课、怎么连库。"""
@@ -337,7 +348,8 @@ def _tool_wrong_book(ctx: AgentContext, args: dict) -> dict:
     conn = ctx.conn()
     try:
         rows = conn.execute(
-            """SELECT w.id, w.wrong_count, q.question, q.answer, q.type, k.title AS kp_title, k.id AS kp_id
+            """SELECT w.id, w.wrong_count, w.error_type, q.question, q.answer, q.type,
+                      k.title AS kp_title, k.id AS kp_id
                FROM wrong_book w
                JOIN questions q ON q.id=w.question_id
                JOIN knowledge_points k ON k.id=q.kp_id
@@ -349,10 +361,11 @@ def _tool_wrong_book(ctx: AgentContext, args: dict) -> dict:
         conn.close()
     return {
         "count": len(rows),
+        "error_types": ERROR_TYPES,
         "items": [
             {"wrong_id": r["id"], "kp_id": r["kp_id"], "kp_title": r["kp_title"], "type": r["type"],
              "question": _clip(r["question"], 200), "answer": _clip(r["answer"], 200),
-             "wrong_count": r["wrong_count"]}
+             "wrong_count": r["wrong_count"], "error_type": r["error_type"] or ""}
             for r in rows
         ],
     }
@@ -491,6 +504,45 @@ def _tool_create_task(ctx: AgentContext, args: dict) -> dict:
     return {"ok": True, "id": tid, "due_date": due, "message": f"已创建复习任务「{title}」"}
 
 
+def _tool_tag_wrong_error(ctx: AgentContext, args: dict) -> dict:
+    """给一道错题打上错因标签（写 wrong_book.error_type）。
+
+    移植自 educational-tutor-ai 的「错题归因」：先看学生错在哪、再给一类可操作的
+    错因，而不是笼统说「这题不会」。归因由模型判断，本工具只负责校验与落库。
+    """
+    wid = _as_int(args.get("wrong_id"))
+    raw = (args.get("error_type") or "").strip()
+    if not wid or not raw:
+        return {"ok": False, "error": "wrong_id 与 error_type 都必填"}
+    key = raw.lower()
+    label = ERROR_TYPES.get(key, raw)
+    if label not in ERROR_TYPES.values():
+        return {
+            "ok": False,
+            "error": f"error_type 只能取 {list(ERROR_TYPES.keys())} 或 {list(ERROR_TYPES.values())} 之一",
+        }
+    conn = ctx.conn()
+    try:
+        row = conn.execute(
+            "SELECT id FROM wrong_book WHERE id=? AND user_id=?", (wid, ctx.uid)
+        ).fetchone()
+        if not row:
+            return {"ok": False, "error": "错题记录不存在，或不属于当前用户"}
+        conn.execute(
+            "UPDATE wrong_book SET error_type=? WHERE id=? AND user_id=?", (label, wid, ctx.uid)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    advice = (args.get("advice") or "").strip()
+    return {
+        "ok": True,
+        "wrong_id": wid,
+        "error_type": label,
+        "message": f"错题 #{wid} 已归因为「{label}」" + (f"，建议：{advice}" if advice else ""),
+    }
+
+
 def _tool_create_event(ctx: AgentContext, args: dict) -> dict:
     title = (args.get("title") or "").strip()
     year = _as_int(args.get("year"))
@@ -586,9 +638,19 @@ TOOLS = {
         fn=_tool_get_my_stats,
     ),
     "get_wrong_book": dict(
-        _spec("get_wrong_book", "看看未掌握的错题（题干、答案、所属知识点）。讲错题、定制复习计划前用。",
+        _spec("get_wrong_book", "看看未掌握的错题（题干、答案、所属知识点、已有的错因标签）。讲错题、做错因归因、定制复习计划前用。",
               {"limit": _I("最多返回几条，默认 10")}),
         fn=_tool_wrong_book,
+    ),
+    "tag_wrong_error": dict(
+        _spec("tag_wrong_error",
+              "给一道错题打错因标签，帮学生看清「错在哪一类」。做完归因再给针对性建议，别只打标签就完事。",
+              {"wrong_id": _I("错题记录 id（来自 get_wrong_book 的 wrong_id）"),
+               "error_type": _S("错因：concept 概念混淆 / sequence 时序错位 / relation 史论脱节 / "
+                               "detail 细节缺失 / reading 审题偏差 / memory 记忆不牢"),
+               "advice": _S("可选：一句话说明下次怎么避免这类错")},
+              ["wrong_id", "error_type"], write=True),
+        fn=_tool_tag_wrong_error,
     ),
     "create_knowledge_point": dict(
         _spec("create_knowledge_point",
@@ -674,6 +736,7 @@ def system_prompt(ctx: AgentContext) -> str:
 3. 学生说「帮我学第 X 章」时，按「查目录 → 检索已有内容 → 补知识点 → 出 2-3 道题 → 建复习任务」的顺序自主跑完，最后给一个三步以内的行动建议。
 4. 写作前先用 list_knowledge_points 查重，避免重复入库；一次别超过 10 条知识点或 10 道题。
 5. 互不依赖的工具在同一轮里一起调用（例如同时查目录和检索史料），别一个工具磨一轮；正常请求应在 2-3 轮内给结论。
+6. 学生问「我为什么老错」或让你分析错题时：先 get_wrong_book 看题，逐题判断错因并调 tag_wrong_error 落库（概念混淆/时序错位/史论脱节/细节缺失/审题偏差/记忆不牢），最后按错因归并成 2-3 条改法。归因要基于题目本身，看不出就写「记忆不牢」，别硬编。
 
 内容要求：
 - 口径必须符合权威简史（《百年奋斗重大成就和历史经验的决议》、四本官方简史、二十大报告），重大年份、会议、文件名称不得写错。

@@ -294,6 +294,28 @@
         "422"
       ]
     },
+    "GET /api/review/due": {
+      "operation_id": "review_due_api_review_due_get",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "schema": "integer"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
     "GET /api/search": {
       "operation_id": "global_search_api_search_get",
       "params": [
@@ -1231,8 +1253,22 @@
           "correct": "boolean",
           "mastery_streak": "integer",
           "recorded": "boolean",
+          "schedule": {
+            "algorithm": "string",
+            "days_until": "integer",
+            "difficulty": "number",
+            "due": "boolean",
+            "interval_days": "number",
+            "interval_text": "string",
+            "long_term": "boolean",
+            "next_review_at": "string",
+            "stability": "number"
+          },
           "wrong_book": {
             "correct_streak": "integer",
+            "id": "integer",
+            "last_wrong_at": "string",
+            "next_review_at": "string",
             "resolved": "integer",
             "wrong_count": "integer"
           }
@@ -1365,11 +1401,11 @@
     },
     "GET /api/wrong-book": {
       "list": {
-        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"correct_streak\": \"integer\", \"error_type\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"next_review_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"user_id\": \"integer\", \"uuid\": \"string\", \"wrong_count\": \"integer\"}>",
+        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"correct_streak\": \"integer\", \"error_type\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"next_review_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"srs_days_until\": \"integer\", \"srs_difficulty\": \"number\", \"srs_due\": \"boolean\", \"srs_interval_text\": \"string\", \"srs_retrievability\": \"number\", \"srs_stability\": \"number\", \"user_id\": \"integer\", \"uuid\": \"string\", \"wrong_count\": \"integer\"}>",
         "status": 200
       },
       "list_all": {
-        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"correct_streak\": \"integer\", \"error_type\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"next_review_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"user_id\": \"integer\", \"uuid\": \"string\", \"wrong_count\": \"integer\"}>",
+        "body": "list<{\"answer\": \"string\", \"attempts\": \"integer\", \"correct_streak\": \"integer\", \"error_type\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"last_wrong_at\": \"string\", \"next_review_at\": \"string\", \"question\": \"string\", \"question_id\": \"integer\", \"resolved\": \"integer\", \"review_marked\": \"integer\", \"srs_days_until\": \"integer\", \"srs_difficulty\": \"number\", \"srs_due\": \"boolean\", \"srs_interval_text\": \"string\", \"srs_retrievability\": \"number\", \"srs_stability\": \"number\", \"user_id\": \"integer\", \"uuid\": \"string\", \"wrong_count\": \"integer\"}>",
         "status": 200
       },
       "list_has_item": true,
