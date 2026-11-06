@@ -212,6 +212,22 @@
         "422"
       ]
     },
+    "GET /api/lan": {
+      "operation_id": "lan_info_api_lan_get",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
     "GET /api/materials": {
       "operation_id": "list_materials_api_materials_get",
       "params": [

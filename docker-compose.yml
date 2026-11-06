@@ -1,0 +1,15 @@
+services:
+  ss-helper:
+    build: .
+    container_name: ss-helper
+    ports:
+      - "8000:8000"
+    volumes:
+      # 学习数据全在这里：备份 = 拷走这个目录
+      - ./data:/app/data
+    environment:
+      # 公网部署建议：不内置任何 key，让每个用户在「AI 设置」里填自己的
+      # （内置 key 会随镜像分发，公网上等于把额度送给陌生人）
+      AI_DISABLE_BUILTIN: "1"
+      # AI_PROXY 留空即可；如果部署机需要代理才能访问阶跃/智谱，填这里
+    restart: unless-stopped

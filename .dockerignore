@@ -1,0 +1,11 @@
+.git
+frontend/node_modules
+backend/frontend_dist
+release
+build
+_to_delete
+_tmp
+_ptmp
+_stale_*
+*.zip
+docs

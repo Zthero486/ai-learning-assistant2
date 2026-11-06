@@ -69,7 +69,7 @@
 
   <el-row :gutter="16">
     <!-- 答疑 -->
-    <el-col :span="12">
+    <el-col :xs="24" :sm="24" :md="12">
       <el-card class="page-card">
         <template #header>智能答疑（基于你的资料）</template>
         <el-input v-model="ask.material_id" placeholder="可选：资料 ID（在资料页查看）" style="margin-bottom:8px" clearable />
@@ -86,7 +86,7 @@
     </el-col>
 
     <!-- 总结与薄弱点 -->
-    <el-col :span="12">
+    <el-col :xs="24" :sm="24" :md="12">
       <el-card class="page-card">
         <template #header>资料总结</template>
         <div style="display:flex;gap:8px;margin-bottom:8px">

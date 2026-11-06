@@ -12,7 +12,7 @@
     </div>
 
     <el-row :gutter="16">
-      <el-col :span="9">
+      <el-col :xs="24" :sm="24" :md="9">
         <el-card class="page-card" shadow="never" body-style="padding: 8px 0;">
           <div v-for="ch in data.chapters" :key="ch.code" class="chapter">
             <div class="chapter-head" @click="toggle(ch.code)">
@@ -37,7 +37,7 @@
         </el-card>
       </el-col>
 
-      <el-col :span="15">
+      <el-col :xs="24" :sm="24" :md="15">
         <el-card class="page-card" shadow="never" v-if="node">
           <div class="node-path">{{ node.path }}</div>
           <div class="node-meta">

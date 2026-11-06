@@ -299,4 +299,18 @@ onMounted(load)
 .hint { color: #8b8f96; font-size: 13px; font-variant-numeric: tabular-nums; }
 .tip { color: #a8adb4; font-size: 12px; line-height: 1.5; margin-top: 2px; }
 :deep(.el-input-number) { width: 130px; }
+
+/* 手机：压缩年份栏与详情缩进，标题栏纵向堆叠 */
+@media (max-width: 768px) {
+  .tl-page { padding: 12px 10px 40px; }
+  .tl-head { flex-direction: column; gap: 10px; margin-bottom: 14px; }
+  .tl-head h2 { font-size: 18px; }
+  .tools { width: 100%; }
+  .tools .sel { flex: 1; width: auto; }
+  .yr { min-width: 52px; font-size: 11px; }
+  .ttl { font-size: 13.5px; }
+  .detail { margin-left: 0; padding: 10px 12px; }
+  .ev { padding: 8px 8px 8px 16px; }
+  .kv { gap: 10px; flex-wrap: wrap; }
+}
 </style>

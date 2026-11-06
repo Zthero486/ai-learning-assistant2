@@ -115,7 +115,7 @@ async function doRegister() {
   justify-content: center;
   background: linear-gradient(135deg, #e8f1ff 0%, #f5f7fa 60%);
 }
-.login-card { width: 420px; padding: 8px 12px 4px; }
+.login-card { width: 100%; max-width: 420px; padding: 8px 12px 4px; }
 .brand { font-size: 22px; font-weight: 700; color: #409eff; text-align: center; }
 .sub { font-size: 13px; color: #909399; text-align: center; margin: 6px 0 18px; }
 .wide { width: 100%; margin-top: 4px; }

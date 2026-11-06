@@ -9,6 +9,7 @@
 开发态也可直接运行本文件调试：python -m backend.launcher（需先有 frontend/dist）
 """
 
+import os
 import shutil
 import socket
 import sys
@@ -65,6 +66,23 @@ def pick_port(preferred: int = 8000, span: int = 10) -> int:
     raise SystemExit(f"端口 {preferred}~{preferred + span - 1} 均被占用，请关闭占用程序后重试。")
 
 
+def lan_addresses(port: int) -> list:
+    """本机所有局域网 IPv4 -> http://ip:port，供手机同 WiFi 扫码访问。"""
+    urls = []
+    try:
+        infos = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
+    except OSError:
+        infos = []
+    seen = set()
+    for info in infos:
+        ip = info[4][0]
+        if ip in seen or ip.startswith("127.") or ip.startswith("169.254."):
+            continue
+        seen.add(ip)
+        urls.append(f"http://{ip}:{port}")
+    return urls
+
+
 def wait_ready(url: str, timeout: float = 20.0) -> bool:
     """轮询健康检查，确认服务真正可用后再打开浏览器。"""
     deadline = time.time() + timeout
@@ -79,29 +97,54 @@ def wait_ready(url: str, timeout: float = 20.0) -> bool:
 
 
 def main() -> None:
+    # APP_HOST 默认只听本机（127.0.0.1，安全）；手机/平板要用时：
+    #   - 便携版：给 exe 加参数 `AILearningAssistant.exe --lan`，或设环境变量 APP_HOST=0.0.0.0
+    #   - 公网部署（Docker/云服务器）：必须 0.0.0.0，由反代/容器网络收口
+    host = os.environ.get("APP_HOST", "").strip() or ("0.0.0.0" if "--lan" in sys.argv else "127.0.0.1")
+    try:
+        preferred = int(os.environ.get("APP_PORT", "8000"))
+    except ValueError:
+        preferred = 8000
+
     seed_database()
-    port = pick_port(8000)
+    port = pick_port(preferred)
     base_url = f"http://127.0.0.1:{port}"
 
     print("=" * 56)
     print("  「四史」学习助手  v1.0")
     print("  党史 / 新中国史 / 改革开放史 / 社会主义发展史")
     print("=" * 56)
-    print(f"  服务地址：{base_url}")
+    print(f"  本机访问：{base_url}")
     print(f"  接口文档：{base_url}/docs")
+    if host == "0.0.0.0":
+        addrs = lan_addresses(port)
+        print("  手机/平板（同一 WiFi 下用浏览器打开）：")
+        for u in addrs[:4]:
+            print(f"    {u}")
+        print("  提示：首次使用 Windows 防火墙可能弹窗，勾选「专用网络」允许。")
+        print("  安全提醒：局域网内任何人都能打开此页面，公共 WiFi 下慎用 --lan。")
     print("  数据目录：程序所在目录下的 data/ 文件夹")
     print("  提示：关闭本窗口即退出软件")
     print("=" * 56)
 
     # 延迟打开浏览器：等健康检查通过再打开，避免出现白页
-    threading.Thread(
-        target=lambda: webbrowser.open(base_url) if wait_ready(base_url) else None,
-        daemon=True,
-    ).start()
+    if host != "0.0.0.0":
+        threading.Thread(
+            target=lambda: webbrowser.open(base_url) if wait_ready(base_url) else None,
+            daemon=True,
+        ).start()
+    else:
+        # 监听公网/局域网时不在服务器上弹浏览器（可能在无桌面的机器上）
+        threading.Thread(
+            target=lambda: webbrowser.open(base_url)
+            if wait_ready(base_url) and os.environ.get("APP_OPEN_BROWSER") == "1"
+            else None,
+            daemon=True,
+        ).start()
 
     from app.main import app  # 延迟导入，确保打包后资源路径已就绪
 
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    uvicorn.run(app, host=host, port=port, log_level="warning")
 
 
 if __name__ == "__main__":

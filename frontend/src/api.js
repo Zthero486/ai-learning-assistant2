@@ -171,6 +171,8 @@ export default {
   search: (q) => request(`/api/search?q=${encodeURIComponent(q)}`),
   // 统计
   statsOverview: () => request('/api/stats/overview'),
+  // 手机访问（局域网 IP 列表，用于生成扫码地址）
+  lan: () => request('/api/lan'),
   // AI
   aiHealth: () => request('/api/health'),
   aiTest: () => request('/api/ai/test', { method: 'POST' }),

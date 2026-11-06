@@ -1,7 +1,7 @@
 <template>
   <div>
     <el-row :gutter="16">
-      <el-col :span="6" v-for="card in totalCards" :key="card.label">
+      <el-col :xs="12" :sm="12" :md="6" v-for="card in totalCards" :key="card.label">
         <el-card class="page-card stat-card" @click="$router.push(card.to)">
           <div class="muted">{{ card.label }} <span class="arrow">›</span></div>
           <div class="num">{{ card.value }}</div>
@@ -10,7 +10,7 @@
     </el-row>
 
     <el-row :gutter="16">
-      <el-col :span="14">
+      <el-col :xs="24" :sm="24" :md="14">
         <el-card class="page-card">
           <template #header>史实要点掌握情况（正确率）</template>
           <el-empty v-if="!perKp.length" description="先导入史料、建立要点并完成自测，这里会出现统计" />
@@ -26,7 +26,7 @@
           </div>
         </el-card>
       </el-col>
-      <el-col :span="10">
+      <el-col :xs="24" :sm="24" :md="10">
         <el-card class="page-card stat-card" @click="$router.push('/tasks')">
           <template #header>近 3 天待复习 <span class="header-arrow">去处理 ›</span></template>
           <el-empty v-if="!dueTasks.length" description="暂无近期到期任务" :image-size="60" />

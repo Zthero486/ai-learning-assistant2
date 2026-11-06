@@ -23,7 +23,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import httpx
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -2020,6 +2020,30 @@ def ai_tools(uid: int = Depends(require_user)):
         ],
         "max_rounds": ai_agent.MAX_ROUNDS,
         "max_tool_calls": ai_agent.MAX_TOOL_CALLS,
+    }
+
+
+@app.get("/api/lan")
+def lan_info(request: Request, uid: int = Depends(require_user)):
+    """本机内网 IPv4 列表，供「手机访问」弹窗生成同 WiFi 扫码地址。
+
+    公网部署时前端直接用当前 origin 生成二维码，不走这个接口。
+    """
+    import socket
+
+    ips = []
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if ip in ips or ip.startswith("127.") or ip.startswith("169.254."):
+                continue
+            ips.append(ip)
+    except OSError:
+        pass
+    return {
+        "ips": ips[:6],
+        "listening": request.app.state.host if hasattr(request.app.state, "host") else "",
+        "note": "需与电脑同一局域网；首次使用需允许 Windows 防火墙（专用网络）。",
     }
 
 

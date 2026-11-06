@@ -409,6 +409,7 @@ onMounted(loadStatus)
   display: flex;
   flex-direction: column;
   height: calc(100vh - 40px);
+  height: calc(100dvh - 40px); /* 手机地址栏伸缩时用 dvh，避免输入框被顶出屏幕 */
   background: #fff;
   border: 1px solid #e4e7ed;
   border-radius: 10px;
@@ -494,4 +495,26 @@ onMounted(loadStatus)
 .foot-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .foot-hint { margin-right: auto; font-size: 12px; color: #b1b7c2; }
 .muted { color: #909399; font-size: 13px; }
+
+/* 手机/竖屏平板：顶栏按钮换行、气泡更宽、快捷指令单列，输入区贴底 */
+@media (max-width: 768px) {
+  .chat-wrap {
+    height: calc(100dvh - 68px);
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+  .chat-head { padding: 8px 10px; gap: 6px; }
+  .head-left .title { font-size: 14px; }
+  .head-right { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
+  .chat-body { padding: 12px 10px; }
+  .bubble-col { max-width: 88%; }
+  .bubble { padding: 10px 12px; font-size: 13px; }
+  .quick-grid { grid-template-columns: 1fr; }
+  .welcome { margin: 8px auto; }
+  .welcome-title { font-size: 17px; }
+  .chat-foot { padding: 8px 10px 10px; }
+  .foot-hint { display: none; }
+  .step-sum { max-width: 46vw; }
+}
 </style>

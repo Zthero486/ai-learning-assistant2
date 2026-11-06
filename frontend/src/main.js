@@ -62,3 +62,10 @@ app.config.globalProperties.$api = api
 app.use(router)
 app.use(ElementPlus, { locale: zhCn })
 app.mount('#app')
+
+// PWA：注册极简 SW（只缓存带哈希的静态资源），让手机可以「添加到主屏幕」当 App 用
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {}) // 注册失败不影响使用
+  })
+}
