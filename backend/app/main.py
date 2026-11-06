@@ -1423,6 +1423,10 @@ def _decorate_wrong(rows: list, now_dt: datetime | None = None) -> list:
     for r in rows:
         d = dict(r)
         raw_srs = d.pop("srs", "")  # 卡片原始 JSON 不下发，前端只用解出来的指标
+        # 旧数据里错因可能存的是英文 key（concept…），展示统一翻成中文
+        err = (d.get("error_type") or "").strip()
+        if err:
+            d["error_type"] = ai_agent.ERROR_TYPES.get(err.lower(), err)
         due, days = srs.due_state(d.get("next_review_at", ""), now_dt)
         d["srs_due"] = due
         d["srs_days_until"] = days
