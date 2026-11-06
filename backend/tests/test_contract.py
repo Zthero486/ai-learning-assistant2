@@ -85,6 +85,7 @@ CONTRACT_MANIFEST = {
     "POST /api/questions/generate-personal",
     "GET /api/questions",
     "POST /api/practice/submit",
+    "GET /api/practice/summary",
     "GET /api/wrong-book",
     "PATCH /api/wrong-book/{wid}",
     "GET /api/review/due",
@@ -550,7 +551,7 @@ def test_接口清单与实测一致():
         f"  清单里有、代码里没有：{sorted(CONTRACT_MANIFEST - actual)}\n"
         "新增/删除接口时，请同步更新 CONTRACT_MANIFEST 并刷新快照。"
     )
-    assert len(CONTRACT_MANIFEST) == 53, f"接口数量应为 53，当前 {len(CONTRACT_MANIFEST)}"
+    assert len(CONTRACT_MANIFEST) == 54, f"接口数量应为 54，当前 {len(CONTRACT_MANIFEST)}"
 
 
 def test_openapi_与路由表一致():

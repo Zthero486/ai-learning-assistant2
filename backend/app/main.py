@@ -1414,6 +1414,27 @@ def submit_practice(body: dict, uid: int = Depends(require_user)):
     }
 
 
+@app.get("/api/practice/summary")
+def practice_summary(uid: int = Depends(require_user)):
+    """自测页首页卡片的数据：今天练了多少、总题量、错题存量。
+
+    一次查询给齐，避免前端为拼几个数字发四个请求。
+    """
+    conn = db()
+    today = now()[:10]
+    row = conn.execute(
+        """SELECT
+             (SELECT COUNT(*) FROM questions WHERE user_id=?) AS total,
+             (SELECT COUNT(*) FROM practice_records WHERE user_id=? AND created_at LIKE ?) AS today_total,
+             (SELECT COUNT(*) FROM practice_records WHERE user_id=? AND created_at LIKE ? AND correct=1) AS today_correct,
+             (SELECT COUNT(*) FROM wrong_book WHERE user_id=? AND resolved=0) AS active_wrong,
+             (SELECT COUNT(*) FROM wrong_book WHERE user_id=? AND resolved=1) AS mastered""",
+        (uid, uid, f"{today}%", uid, f"{today}%", uid, uid),
+    ).fetchone()
+    conn.close()
+    return dict(row)
+
+
 def _decorate_wrong(rows: list, now_dt: datetime | None = None) -> list:
     """给错题行补上排期展示字段（到期没 / 还有几天 / 掌握度）。
 

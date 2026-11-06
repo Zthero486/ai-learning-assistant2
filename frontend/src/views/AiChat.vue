@@ -357,7 +357,11 @@ async function send(text) {
             if (ev.ok && uiLink.value) {
               const target = ev.detail?.ui?.route || UI_ROUTE[ev.tool]
               if (target && route.path !== target) {
-                router.push(target)
+                // 出题跳自测时带个标记，让练习页提示「新题已入题库」
+                const to = ev.tool === 'create_questions' && !ev.detail?.ui?.route
+                  ? { path: target, query: { fresh: '1' } }
+                  : target
+                router.push(to)
                 emit('navigated', target)
               }
             }

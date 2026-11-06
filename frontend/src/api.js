@@ -161,6 +161,7 @@ export default {
   generateQuestions: (body) => request('/api/questions/generate', { method: 'POST', body: JSON.stringify(body) }),
   listQuestions: (kpId) => request(`/api/questions${kpId ? `?kp_id=${kpId}` : ''}`),
   submitPractice: (body) => request('/api/practice/submit', { method: 'POST', body: JSON.stringify(body) }),
+  practiceSummary: () => request('/api/practice/summary'),
   // 语音转文字：录音 Blob 上传，服务端转发到 OpenAI 兼容 ASR（.env 里 AI_ASR_URL）
   transcribe: (blob) => {
     const fd = new FormData()

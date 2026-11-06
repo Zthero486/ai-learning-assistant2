@@ -272,6 +272,22 @@
         "422"
       ]
     },
+    "GET /api/practice/summary": {
+      "operation_id": "practice_summary_api_practice_summary_get",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
     "GET /api/questions": {
       "operation_id": "list_questions_api_questions_get",
       "params": [
