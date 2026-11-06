@@ -32,6 +32,18 @@ _QUESTIONS_HINT = ('questions 必须是 JSON 数组（不是字符串），每�
                    ' {"type":"单选题","question":"题干","answer":"参考答案"}，'
                    'type 和 answer 可省略')
 
+# navigate 工具可去的页面（前端路由白名单）
+UI_ROUTES = {
+    "/": "学习看板",
+    "/syllabus": "教材目录",
+    "/timeline": "四史时间轴",
+    "/materials": "史料笔记",
+    "/knowledge": "史实要点",
+    "/tasks": "复习任务",
+    "/practice": "自测",
+    "/wrong-book": "错题本",
+}
+
 # 单次对话各写入工具的批数上限（防"全流程狂写"烧光调用预算）
 WRITE_BUDGETS = {
     "create_knowledge_point": 6,
@@ -565,6 +577,20 @@ def _tool_create_task(ctx: AgentContext, args: dict) -> dict:
     return {"ok": True, "id": tid, "due_date": due, "message": f"已创建复习任务「{title}」"}
 
 
+def _tool_navigate(ctx: AgentContext, args: dict) -> dict:
+    """UI 动作通道：让 AI 直接切换软件页面。
+
+    后端只做白名单校验并把意图随事件流发回去，真正跳转由前端执行 ——
+    学生说「切到史料笔记」，界面就直接切过去，不用再手动点侧栏。
+    """
+    route = (args.get("route") or "").strip()
+    if route not in UI_ROUTES:
+        return {"ok": False, "error": f"route 必须是 {list(UI_ROUTES)} 之一"}
+    return {"ok": True, "route": route, "label": UI_ROUTES[route],
+            "ui": {"action": "navigate", "route": route},
+            "message": f"已切换到「{UI_ROUTES[route]}」"}
+
+
 def _tool_tag_wrong_error(ctx: AgentContext, args: dict) -> dict:
     """给一道错题打上错因标签（写 wrong_book.error_type）。
 
@@ -692,6 +718,13 @@ TOOLS = {
               {"keyword": _S("可选：事件名关键词"), "year_from": _I("可选：起始年"),
                "year_to": _I("可选：结束年"), "limit": _I("最多返回几条，默认 30")}),
         fn=_tool_list_events,
+    ),
+    "navigate": dict(
+        _spec("navigate",
+              "直接切换软件页面（学生说「切到/打开/带我去 XX」时调用，界面会真的跳过去）。",
+              {"route": _S("页面路径：" + "，".join(f"{k}={v}" for k, v in UI_ROUTES.items()))},
+              ["route"]),
+        fn=_tool_navigate,
     ),
     "get_my_stats": dict(
         _spec("get_my_stats", "查看本人学习数据：资料/知识点/题目/任务数量、练习次数、错题数、薄弱知识点、临近任务。给复习建议前先调它。",
@@ -828,6 +861,7 @@ def system_prompt(ctx: AgentContext) -> str:
 8. 写入有预算：知识点 6 条、出题 4 批、任务 5 条、资料 2 篇。**学生点名的动作优先**——比如他要的是复习任务，就先建任务；到预算上限就收尾汇报，别恋战。
 9. 学生问「我为什么老错」或让你分析错题时：先 get_wrong_book 看题，逐题判断错因并调 tag_wrong_error 落库（概念混淆/时序错位/史论脱节/细节缺失/审题偏差/记忆不牢），最后按错因归并成 2-3 条改法。归因要基于题目本身，看不出就写「记忆不牢」，别硬编。
 10. 学生要求处理**当前课程以外**的内容（比如你在教《党史》他却要新中国史的知识点/题目）：**不要借当前课程的名义写入**，直接提醒他到软件右上角「切换课程」再回来找你，一次说清即可。
+11. 你能直接操控界面：学生说「切到史料笔记/打开错题本/带我去自测」就调 navigate；写完知识点、题目、任务、资料后主动调 navigate 把学生带到对应页面（知识点→/knowledge，题目→/practice，任务→/tasks，资料→/materials，事件→/timeline），并在答复里说「已经帮你切过去了」。
 
 内容要求：
 - 口径必须符合权威简史（《百年奋斗重大成就和历史经验的决议》、四本官方简史、二十大报告），重大年份、会议、文件名称不得写错。

@@ -153,6 +153,19 @@ CASES = [
             f"工具 {_steps_of(f)}",
         ),
     },
+    {
+        "id": 11,
+        "title": "联动跳转：口头指令切页面",
+        "prompt": "切到史料笔记，我要看看之前存的东西",
+        "allow_write": True,
+        "check": lambda f, c: (
+            any(
+                s["tool"] == "navigate" and (s.get("args") or {}).get("route") == "/materials"
+                for s in f.get("steps", [])
+            ),
+            f"工具 {_steps_of(f)}",
+        ),
+    },
 ]
 
 

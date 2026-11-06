@@ -28,8 +28,8 @@ def party_ctx(client):
 def test_工具数量与权限划分():
     read_only = ai_agent.tool_specs(False)
     full = ai_agent.tool_specs(True)
-    assert len(read_only) == 8
-    assert len(full) == 14
+    assert len(read_only) == 9
+    assert len(full) == 15
     assert all(t["function"]["name"] not in {x["function"]["name"] for x in read_only}
                for t in full if t not in read_only)
     assert all(not t["write"] for t in ai_agent.TOOLS.values() if t["spec"] in read_only)
@@ -125,7 +125,7 @@ def test_未选课时对话接口报错():
 def test_工具清单接口(client):
     client.post("/api/profile/track", json={"track": "party"})
     data = client.get("/api/ai/tools").json()
-    assert len(data["tools"]) == 14
+    assert len(data["tools"]) == 15
     assert sum(1 for t in data["tools"] if t["write"]) == 6
 
 

@@ -36,7 +36,7 @@
         <button class="float-close" title="收起（内容会保留）" @click="open = false">✕</button>
       </div>
       <div class="float-body">
-        <AiChat />
+        <AiChat @navigated="onNavigated" />
       </div>
     </div>
   </div>
@@ -52,6 +52,11 @@ const open = ref(false)
 const pos = ref(null) // null = 默认停靠右下角；拖过后用 left/top
 const isMobile = ref(false)
 let mql = null
+
+// AI 联动跳转后，手机上把全屏面板收起来，让出画面给目标页面
+function onNavigated() {
+  if (isMobile.value) open.value = false
+}
 
 let drag = null
 function dragStart(e) {

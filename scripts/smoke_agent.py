@@ -2,7 +2,7 @@
 """AI Agent 工具层冒烟测试。
 
 分两段：
-A. 离线：直接调 14 个工具的执行函数（不花 token），验证 SQL、权限、去重、错误处理。
+A. 离线：直接调 15 个工具的执行函数（不花 token），验证 SQL、权限、去重、错误处理。
 B. 在线：如果有可用 AI key，跑一次真实对话，看模型会不会自己选工具。
 
 结果写 _tmp/agent_smoke.txt（沙箱里 stdout 不稳定，落盘再读）。
@@ -136,9 +136,11 @@ try:
 
     # ---- 权限开关 ----
     r = ai_agent.execute_tool(ctx, "create_task", {"title": "只读模式"}, False)
+    check("navigate 合法路由", ai_agent.execute_tool(ctx, "navigate", {"route": "/materials"}, allow_write=True)["route"] == "/materials")
+    check("navigate 非法路由被拒", ai_agent.execute_tool(ctx, "navigate", {"route": "/admin"}, allow_write=True)["ok"] is False)
     check("allow_write=False 时写入被拒", r.get("ok") is False, r.get("error", "")[:40])
-    check("只读工具清单 8 个", len(ai_agent.tool_specs(False)) == 8, len(ai_agent.tool_specs(False)))
-    check("全量工具 14 个", len(ai_agent.tool_specs(True)) == 14, len(ai_agent.tool_specs(True)))
+    check("只读工具清单 9 个", len(ai_agent.tool_specs(False)) == 9, len(ai_agent.tool_specs(False)))
+    check("全量工具 15 个", len(ai_agent.tool_specs(True)) == 15, len(ai_agent.tool_specs(True)))
 
     conn = main.db()
     counts = {

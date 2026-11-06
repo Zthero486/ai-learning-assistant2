@@ -13,6 +13,8 @@
       <div class="head-right">
         <span class="switch-label">允许 AI 写入</span>
         <el-switch v-model="allowWrite" size="small" @change="savePrefs" />
+        <span class="switch-label">联动跳转</span>
+        <el-switch v-model="uiLink" size="small" @change="savePrefs" />
         <el-button size="small" @click="openTools">能做什么</el-button>
         <el-button size="small" @click="openConfig">AI 设置</el-button>
         <el-button size="small" type="primary" plain @click="newChat">新对话</el-button>
@@ -88,6 +90,7 @@
     <el-dialog v-model="toolsVisible" title="AI 在这个软件里能做什么" width="620px" append-to-body>
       <p class="muted" style="margin-top:0">
         只读工具任何时候都可用；写入工具受上方「允许 AI 写入」开关控制。AI 没有任何删除权限。
+        开着「联动跳转」时，说「切到史料笔记」AI 会直接帮你切页面，出完题也会自动跳到自测。
       </p>
       <el-table :data="tools" size="small" max-height="420">
         <el-table-column prop="name" label="工具" width="190" />
@@ -147,12 +150,13 @@
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Microphone } from '@element-plus/icons-vue'
 import { useVoiceInput } from '../composables/voice'
 import api, { auth } from '../api'
 
 const route = useRoute()
+const router = useRouter()
 
 const TRACKS = {
   party: { name: '党史', color: '#c0392b' },
@@ -172,12 +176,27 @@ const TOOL_LABEL = {
   list_events: '查时间轴',
   get_my_stats: '看学习数据',
   get_wrong_book: '看错题',
+  navigate: '切换页面',
   create_knowledge_point: '写入知识点',
   create_material: '生成资料',
   create_questions: '生成题目',
   create_task: '建复习任务',
   create_event: '补时间轴',
+  tag_wrong_error: '标注错因',
 }
+
+// AI 动作 → 页面：navigate 是 AI 明确说「切过去」，其余是写完东西顺势带你去用
+const UI_ROUTE = {
+  navigate: null, // 路由取 detail.ui.route（后端白名单校验过）
+  create_knowledge_point: '/knowledge',
+  create_questions: '/practice',
+  create_task: '/tasks',
+  create_material: '/materials',
+  create_event: '/timeline',
+  tag_wrong_error: '/wrong-book',
+}
+
+const emit = defineEmits(['navigated'])
 
 const trackName = computed(() => TRACKS[auth.track()]?.name || '')
 const trackColor = computed(() => TRACKS[auth.track()]?.color || '#909399')
@@ -209,6 +228,7 @@ function toggleMic() {
   voice.toggle()
 }
 const allowWrite = ref(loadPrefs().allowWrite !== false)
+const uiLink = ref(loadPrefs().uiLink !== false)
 const aiSource = ref('none')
 const scrollEl = ref(null)
 const toolsVisible = ref(false)
@@ -236,7 +256,7 @@ function loadPrefs() {
   try { return JSON.parse(localStorage.getItem(STORE_PREFS) || '{}') } catch { return {} }
 }
 function savePrefs() {
-  localStorage.setItem(STORE_PREFS, JSON.stringify({ allowWrite: allowWrite.value }))
+  localStorage.setItem(STORE_PREFS, JSON.stringify({ allowWrite: allowWrite.value, uiLink: uiLink.value }))
 }
 function persist() {
   const clean = msgs.value.filter((m) => !m.pending).slice(-40)
@@ -331,6 +351,14 @@ async function send(text) {
                 reply.steps[i].summary = ev.summary
                 reply.steps[i].ok = ev.ok
                 break
+              }
+            }
+            // AI→UI 联动：工具成功后按映射切页面（navigate 是显式指令，其余是写完顺势带你去看）
+            if (ev.ok && uiLink.value) {
+              const target = ev.detail?.ui?.route || UI_ROUTE[ev.tool]
+              if (target && route.path !== target) {
+                router.push(target)
+                emit('navigated', target)
               }
             }
           } else if (ev.type === 'error') {

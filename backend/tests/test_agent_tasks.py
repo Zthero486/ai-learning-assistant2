@@ -133,3 +133,22 @@ def test_caps_were_raised_for_long_tasks():
     """学整章这种长任务需要更多轮次和调用额度（真机评测里 16 次不够用）。"""
     assert ai_agent.MAX_ROUNDS >= 8
     assert ai_agent.MAX_TOOL_CALLS >= 20
+
+
+# ---------- UI 动作通道：AI 直接切换页面 ----------
+def test_navigate_whitelist(party_ctx):
+    ctx, _ = party_ctx
+    ok = ai_agent.execute_tool(ctx, "navigate", {"route": "/materials"}, allow_write=True)
+    assert ok["ok"] is True
+    assert ok["ui"] == {"action": "navigate", "route": "/materials"}
+    assert "史料笔记" in ok["message"]
+    # 非白名单路径必须拒绝，防止 AI 把学生带到不存在的页面
+    bad = ai_agent.execute_tool(ctx, "navigate", {"route": "/admin"}, allow_write=True)
+    assert bad["ok"] is False
+
+
+def test_navigate_works_in_readonly_mode(party_ctx):
+    """切页面不是写库，只读模式也应该可用。"""
+    ctx, _ = party_ctx
+    r = ai_agent.execute_tool(ctx, "navigate", {"route": "/practice"}, allow_write=False)
+    assert r["ok"] is True and r["route"] == "/practice"
