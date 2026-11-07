@@ -111,9 +111,12 @@
       </template>
     </el-dialog>
   </div>
+
+  <AiInline context="四史时间轴" />
 </template>
 
 <script setup>
+import AiInline from '../components/AiInline.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api, { auth } from '../api'

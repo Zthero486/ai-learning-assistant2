@@ -40,9 +40,12 @@
       <el-button type="primary" @click="save">保存</el-button>
     </template>
   </el-dialog>
+
+  <AiInline context="史实要点" />
 </template>
 
 <script setup>
+import AiInline from '../components/AiInline.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api, { auth } from '../api'

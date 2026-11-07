@@ -2080,7 +2080,9 @@ def ai_chat(body: dict, uid: int = Depends(require_user)):
     if not isinstance(messages, list) or not messages:
         raise HTTPException(400, "messages 不能为空")
     allow_write = bool(body.get("allow_write", True))
-    ctx = ai_agent.AgentContext(uid, track, db, now)
+    # 页面内嵌 AI 传来的上下文：学生此刻在哪个功能页、正在做什么
+    ctx = ai_agent.AgentContext(uid, track, db, now,
+                                page_context=str(body.get("page_context") or ""))
 
     if not ai_helper.is_available():
         tip = (

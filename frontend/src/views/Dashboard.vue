@@ -63,9 +63,12 @@
       </el-col>
     </el-row>
   </div>
+
+  <AiInline context="学习看板" />
 </template>
 
 <script setup>
+import AiInline from '../components/AiInline.vue'
 import { ref, computed, onMounted } from 'vue'
 import api from '../api'
 

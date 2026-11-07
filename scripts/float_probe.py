@@ -15,6 +15,9 @@ OUT = ROOT / "_tmp" / "mobile_shots"
 BASE = "http://127.0.0.1:8031"
 CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 
+# 探针全部访问本机地址：禁用环境代理（系统代理开着时 urllib 会被劫持成 502）
+urllib.request.install_opener(urllib.request.build_opener(urllib.request.ProxyHandler({})))
+
 
 def api(path, body=None, token=""):
     headers = {"Content-Type": "application/json"}

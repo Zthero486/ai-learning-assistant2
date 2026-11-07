@@ -153,6 +153,7 @@ import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { Microphone } from '@element-plus/icons-vue'
 import { useVoiceInput } from '../composables/voice'
+import { useAiConversation, toolLabel } from '../composables/useAiConversation'
 import api, { auth } from '../api'
 
 const route = useRoute()
@@ -166,35 +167,6 @@ const TRACKS = {
 }
 const STORE_MSGS = 'lp_ai_chat_msgs'
 const STORE_PREFS = 'lp_ai_chat_prefs'
-
-const TOOL_LABEL = {
-  list_syllabus: '查看教材目录',
-  find_node: '定位章节',
-  search_content: '检索史料',
-  read_material: '阅读原文',
-  list_knowledge_points: '查知识点',
-  list_events: '查时间轴',
-  get_my_stats: '看学习数据',
-  get_wrong_book: '看错题',
-  navigate: '切换页面',
-  create_knowledge_point: '写入知识点',
-  create_material: '生成资料',
-  create_questions: '生成题目',
-  create_task: '建复习任务',
-  create_event: '补时间轴',
-  tag_wrong_error: '标注错因',
-}
-
-// AI 动作 → 页面：navigate 是 AI 明确说「切过去」，其余是写完东西顺势带你去用
-const UI_ROUTE = {
-  navigate: null, // 路由取 detail.ui.route（后端白名单校验过）
-  create_knowledge_point: '/knowledge',
-  create_questions: '/practice',
-  create_task: '/tasks',
-  create_material: '/materials',
-  create_event: '/timeline',
-  tag_wrong_error: '/wrong-book',
-}
 
 const emit = defineEmits(['navigated'])
 
@@ -235,6 +207,28 @@ const toolsVisible = ref(false)
 const tools = ref([])
 const controller = ref(null)
 
+// 对话核心逻辑在 useAiConversation（与各页面内嵌 AI 共用）
+const conv = useAiConversation({
+  msgs,
+  busy,
+  controller,
+  persist,
+  getAllowWrite: () => allowWrite.value,
+  getUiLink: () => uiLink.value,
+  onNavigated: (t) => emit('navigated', t),
+})
+
+function send(text) {
+  const raw = (text ?? draft.value).trim()
+  if (!raw || busy.value) return
+  draft.value = ''
+  conv.send(raw)
+}
+
+function stop() {
+  conv.stop()
+}
+
 const quickPrompts = [
   '帮我看看这门课第一章讲什么，给我建 3 条史实要点',
   '把这一章的核心内容整理成一篇资料存进史料笔记',
@@ -263,10 +257,7 @@ function persist() {
   localStorage.setItem(STORE_MSGS, JSON.stringify(clean))
 }
 
-function toolLabel(name) {
-  return TOOL_LABEL[name] || name
-}
-
+// toolLabel 已从 useAiConversation 导入
 // 极简 Markdown：只处理标题/加粗/列表/代码，先转义再加标签（模型输出不可信）
 function escapeHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -321,90 +312,6 @@ function newChat() {
   persist()
 }
 
-async function send(text) {
-  const content = (text ?? draft.value).trim()
-  if (!content || busy.value) return
-  draft.value = ''
-  msgs.value.push({ role: 'user', content })
-  const reply = { role: 'assistant', content: '', steps: [], pending: true }
-  msgs.value.push(reply)
-  busy.value = true
-  controller.value = new AbortController()
-
-  const history = msgs.value
-    .filter((m) => !m.pending && m.content)
-    .map((m) => ({ role: m.role, content: m.content }))
-    .slice(-20)
-
-  // 本轮 AI 新出的题：done 时合并成一次「去自测页开做」的跳转，避免多批次互相覆盖
-  const freshQids = []
-
-  try {
-    await api.aiChat(
-      { messages: history, allow_write: allowWrite.value, stream: true },
-      {
-        signal: controller.value.signal,
-        onEvent: (ev) => {
-          if (ev.type === 'step' && ev.phase === 'start') {
-            reply.steps.push({ tool: ev.tool, summary: '执行中…', ok: null, write: !!ev.write })
-          } else if (ev.type === 'step' && ev.phase === 'end') {
-            // 从后往前找第一条同名的「执行中」，避免并行调用时串位
-            for (let i = reply.steps.length - 1; i >= 0; i--) {
-              if (reply.steps[i].tool === ev.tool && reply.steps[i].ok === null) {
-                reply.steps[i].summary = ev.summary
-                reply.steps[i].ok = ev.ok
-                break
-              }
-            }
-            // AI→UI 联动：工具成功后按映射切页面（navigate 是显式指令，其余是写完顺势带你去看）
-            if (ev.ok && uiLink.value) {
-              const target = ev.detail?.ui?.route || UI_ROUTE[ev.tool]
-              // 出题特殊：先攒着 id，done 时统一跳（同轮多批合并成一轮新题会话）
-              if (ev.tool === 'create_questions' && !ev.detail?.ui?.route) {
-                freshQids.push(...(ev.detail?.ids || []))
-              } else if (target && route.path !== target) {
-                router.push(target)
-                emit('navigated', target)
-              }
-            }
-          } else if (ev.type === 'error') {
-            reply.content = `⚠ ${ev.message}`
-            reply.pending = false
-          } else if (ev.type === 'done') {
-            reply.content = ev.reply || reply.content || '（AI 没有返回内容，换个说法再问一次试试）'
-            reply.pending = false
-            // 出完题统一带路：人已在自测页也要触发，所以 query 每次都变（无 id 时用时间戳）
-            if (freshQids.length && uiLink.value) {
-              router.push({ path: '/practice', query: { fresh: freshQids.join(',') } })
-              emit('navigated', '/practice')
-            }
-            if (ev.mode === 'unavailable') {
-              ElMessage.warning('当前没有可用的 AI Key，请先在「AI 设置」里配置')
-            }
-          }
-        },
-      },
-    )
-  } catch (e) {
-    if (e.name === 'AbortError') {
-      reply.content = reply.content || '（已停止）'
-    } else {
-      reply.content = `⚠ ${e.message}`
-      ElMessage.error(e.message)
-    }
-    reply.pending = false
-  } finally {
-    busy.value = false
-    controller.value = null
-    reply.pending = false
-    persist()
-  }
-}
-
-function stop() {
-  controller.value?.abort()
-  busy.value = false
-}
 
 // ---- AI 状态与配置 ----
 async function loadStatus() {

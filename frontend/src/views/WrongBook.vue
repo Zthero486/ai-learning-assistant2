@@ -70,9 +70,12 @@
       </div>
     </div>
   </el-card>
+
+  <AiInline context="错题本" />
 </template>
 
 <script setup>
+import AiInline from '../components/AiInline.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'

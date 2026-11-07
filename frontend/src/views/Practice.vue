@@ -202,9 +202,12 @@
       </el-collapse>
     </el-card>
   </div>
+
+  <AiInline context="自测" />
 </template>
 
 <script setup>
+import AiInline from '../components/AiInline.vue'
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'

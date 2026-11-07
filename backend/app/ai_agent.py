@@ -76,11 +76,12 @@ class AgentContext:
     """一次对话的上下文：谁、学哪门课、怎么连库。"""
 
     def __init__(self, uid: int, track: str, conn_factory: Callable[[], sqlite3.Connection],
-                 now_fn: Callable[[], str]):
+                 now_fn: Callable[[], str], page_context: str = ""):
         self.uid = uid
         self.track = track
         self.conn = conn_factory
         self.now = now_fn
+        self.page_context = (page_context or "").strip()[:200]  # 学生当前所在页面/正在做的事
         self.written: dict = {}  # 写入工具 -> 本对话成功写入的批数（预算控制用）
 
     @property
@@ -871,7 +872,7 @@ def system_prompt(ctx: AgentContext) -> str:
 - 回答用中文，先给结论，再分点展开；不超过 500 字，需要长文时先给框架。
 
 当前课程：{ctx.track_name}（track={ctx.track}）。章节 code 形如 {ctx.track}-03-02，写入必须用真实的节 code。
-今天是 {_today_line()}。学生说「明天/下周/这几天」这类相对日期时，先换算成具体日期再调工具。"""
+今天是 {_today_line()}。学生说「明天/下周/这几天」这类相对日期时，先换算成具体日期再调工具。{f"\n学生此刻在「{ctx.page_context}」功能页内和你对话，回答尽量贴合这个场景（比如在自测页就多谈做题安排，在任务页就围绕复习计划）；他的指令若与页面相关，优先直接执行并顺势 navigate。" if ctx.page_context else ""}"""
 
 
 def _force_final(convo: list) -> str:

@@ -101,9 +101,12 @@
       </template>
     </el-dialog>
   </div>
+
+  <AiInline context="教材目录" />
 </template>
 
 <script setup>
+import AiInline from '../components/AiInline.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'

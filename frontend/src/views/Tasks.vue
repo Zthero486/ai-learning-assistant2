@@ -53,9 +53,12 @@
       <el-button type="primary" @click="save">保存</el-button>
     </template>
   </el-dialog>
+
+  <AiInline context="复习任务" />
 </template>
 
 <script setup>
+import AiInline from '../components/AiInline.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'

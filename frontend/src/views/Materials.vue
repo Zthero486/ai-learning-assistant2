@@ -30,9 +30,12 @@
   <el-drawer v-model="viewerVisible" :title="viewerTitle" size="50%">
     <pre class="content-view">{{ viewerContent }}</pre>
   </el-drawer>
+
+  <AiInline context="史料笔记" />
 </template>
 
 <script setup>
+import AiInline from '../components/AiInline.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
