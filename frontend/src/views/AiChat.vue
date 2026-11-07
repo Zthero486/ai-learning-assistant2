@@ -336,6 +336,9 @@ async function send(text) {
     .map((m) => ({ role: m.role, content: m.content }))
     .slice(-20)
 
+  // 本轮 AI 新出的题：done 时合并成一次「去自测页开做」的跳转，避免多批次互相覆盖
+  const freshQids = []
+
   try {
     await api.aiChat(
       { messages: history, allow_write: allowWrite.value, stream: true },
@@ -356,12 +359,11 @@ async function send(text) {
             // AI→UI 联动：工具成功后按映射切页面（navigate 是显式指令，其余是写完顺势带你去看）
             if (ev.ok && uiLink.value) {
               const target = ev.detail?.ui?.route || UI_ROUTE[ev.tool]
-              if (target && route.path !== target) {
-                // 出题跳自测时带个标记，让练习页提示「新题已入题库」
-                const to = ev.tool === 'create_questions' && !ev.detail?.ui?.route
-                  ? { path: target, query: { fresh: '1' } }
-                  : target
-                router.push(to)
+              // 出题特殊：先攒着 id，done 时统一跳（同轮多批合并成一轮新题会话）
+              if (ev.tool === 'create_questions' && !ev.detail?.ui?.route) {
+                freshQids.push(...(ev.detail?.ids || []))
+              } else if (target && route.path !== target) {
+                router.push(target)
                 emit('navigated', target)
               }
             }
@@ -371,6 +373,11 @@ async function send(text) {
           } else if (ev.type === 'done') {
             reply.content = ev.reply || reply.content || '（AI 没有返回内容，换个说法再问一次试试）'
             reply.pending = false
+            // 出完题统一带路：人已在自测页也要触发，所以 query 每次都变（无 id 时用时间戳）
+            if (freshQids.length && uiLink.value) {
+              router.push({ path: '/practice', query: { fresh: freshQids.join(',') } })
+              emit('navigated', '/practice')
+            }
             if (ev.mode === 'unavailable') {
               ElMessage.warning('当前没有可用的 AI Key，请先在「AI 设置」里配置')
             }

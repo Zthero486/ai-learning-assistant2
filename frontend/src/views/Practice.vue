@@ -205,7 +205,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../api'
@@ -278,6 +278,7 @@ async function load() {
   } catch (e) {
     ElMessage.error(e.message)
   }
+  tryStartFresh() // 若 AI 跳转已发生而题库刚加载完，这里补上
 }
 
 function poolFor(mode) {
@@ -312,7 +313,11 @@ function start() {
     pool = shuffle(poolFor(range.value))
   }
   if (!pool.length) return
-  list.value = pool.slice(0, Math.min(size.value, pool.length))
+  beginSession(shuffle(pool).slice(0, Math.min(size.value, pool.length)))
+}
+
+function beginSession(pool) {
+  list.value = pool
   idx.value = 0
   okCount.value = 0
   noCount.value = 0
@@ -321,6 +326,30 @@ function start() {
   startedAt.value = Date.now()
   enterQuestion()
   stage.value = 'session'
+}
+
+// ---------- AI 联动：出题后直接开一轮「AI 新题」作答，数据落库 ----------
+// AI 出题工具跳转时带 ?fresh=<question_ids逗号分隔>：等题库加载完就抽这几道题直接开做
+let pendingFresh = null
+watch(() => route.query.fresh, (v) => {
+  if (!v) return
+  pendingFresh = String(v)
+  router.replace({ query: {} }) // 立即清标记，刷新不会重复弹
+  tryStartFresh()
+})
+
+function tryStartFresh() {
+  if (!pendingFresh || !questions.value.length) return // 题库还没加载完就等 load() 回调
+  const want = pendingFresh.split(',').map(Number).filter(Boolean)
+  pendingFresh = null
+  if (!want.length) return
+  const picked = want.map((id) => questions.value.find((x) => x.id === id)).filter(Boolean)
+  if (!picked.length) {
+    ElMessage.warning('AI 刚出的题还没同步到题库，稍后手动组卷即可')
+    return
+  }
+  beginSession(picked)
+  ElMessage.success(`AI 新题来啦，共 ${picked.length} 道，直接开始作答（答错自动进错题本）`)
 }
 
 function enterQuestion() {
@@ -489,12 +518,14 @@ async function genPersonal() {
 }
 
 onMounted(() => {
-  // AI 联动跳转过来（出完题自动带你看）：提示一句再正常组卷
-  if (route.query.fresh) {
-    ElMessage.success('AI 刚生成了新题，已进题库，选好范围点「开始这一轮」就能练')
-    router.replace({ query: {} }) // 清掉标记，刷新不再弹
-  }
-  load()
+  load().then(() => {
+    // AI 联动跳转过来（出完题自动带你看）：直接开做新题
+    if (route.query.fresh) {
+      pendingFresh = String(route.query.fresh)
+      router.replace({ query: {} })
+      tryStartFresh()
+    }
+  })
 })
 </script>
 
