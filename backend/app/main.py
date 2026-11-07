@@ -1465,7 +1465,7 @@ def _decorate_wrong(rows: list, now_dt: datetime | None = None) -> list:
 @app.get("/api/wrong-book")
 def wrong_book(only_unresolved: bool = True, uid: int = Depends(require_user)):
     conn = db()
-    sql = """SELECT w.*, q.question, q.answer, q.kp_id, k.title AS kp_title,
+    sql = """SELECT w.*, q.question, q.answer, q.kp_id, k.title AS kp_title, k.course AS course,
              (SELECT COUNT(*) FROM practice_records pr WHERE pr.question_id=q.id) AS attempts
              FROM wrong_book w JOIN questions q ON q.id=w.question_id
              LEFT JOIN knowledge_points k ON k.id=q.kp_id"""
@@ -1488,7 +1488,7 @@ def review_due(limit: int = 20, uid: int = Depends(require_user)):
     """
     conn = db()
     rows = conn.execute(
-        """SELECT w.*, q.question, q.answer, q.kp_id, k.title AS kp_title,
+        """SELECT w.*, q.question, q.answer, q.kp_id, k.title AS kp_title, k.course AS course,
                   (SELECT COUNT(*) FROM practice_records pr WHERE pr.question_id=q.id) AS attempts
            FROM wrong_book w JOIN questions q ON q.id=w.question_id
            LEFT JOIN knowledge_points k ON k.id=q.kp_id
