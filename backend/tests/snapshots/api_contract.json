@@ -1218,7 +1218,7 @@
         "status": 200
       },
       "list_filtered": {
-        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"era\": \"string\", \"exam_type\": \"string\", \"id\": \"integer\", \"material_id\": \"integer\", \"material_title\": \"string\", \"node_code\": \"string\", \"question_count\": \"integer\", \"title\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\", \"year_end\": \"null\", \"year_start\": \"null\"}>",
+        "body": "list<any>",
         "status": 200
       },
       "update": {

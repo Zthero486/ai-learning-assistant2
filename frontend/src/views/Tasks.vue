@@ -8,22 +8,12 @@
     </template>
     <el-table :data="tasks" v-loading="loading">
       <el-table-column prop="title" label="任务" min-width="160" />
-      <el-table-column prop="course" label="时期" width="110" />
       <el-table-column prop="kp_title" label="关联知识点" width="130">
         <template #default="{ row }">{{ row.kp_title || '—' }}</template>
       </el-table-column>
       <el-table-column prop="due_date" label="截止日期" width="120">
         <template #default="{ row }">
           <span :class="{ 'overdue': row.overdue }">{{ row.due_date || '—' }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="状态" width="140">
-        <template #default="{ row }">
-          <el-select :model-value="row.status" size="small" @change="(s) => setStatus(row, s)">
-            <el-option label="待办" value="todo" />
-            <el-option label="进行中" value="doing" />
-            <el-option label="已完成" value="done" />
-          </el-select>
         </template>
       </el-table-column>
       <el-table-column label="操作" width="90">
@@ -37,7 +27,6 @@
   <el-dialog v-model="dialogVisible" title="新建复习任务" width="520px">
     <el-form label-width="90px">
       <el-form-item label="任务标题"><el-input v-model="form.title" /></el-form-item>
-      <el-form-item label="时期"><el-input v-model="form.course" /></el-form-item>
       <el-form-item label="关联知识点">
         <el-select v-model="form.kp_id" clearable style="width:100%">
           <el-option v-for="k in kps" :key="k.id" :label="k.title" :value="k.id" />
@@ -67,7 +56,7 @@ const tasks = ref([])
 const kps = ref([])
 const loading = ref(false)
 const dialogVisible = ref(false)
-const form = ref({ title: '', course: '未分类', kp_id: null, due_date: null, description: '' })
+const form = ref({ title: '', kp_id: null, due_date: null, description: '' })
 
 async function load() {
   loading.value = true
@@ -86,17 +75,8 @@ async function save() {
     await api.createTask(form.value)
     ElMessage.success('任务已创建')
     dialogVisible.value = false
-    form.value = { title: '', course: '未分类', kp_id: null, due_date: null, description: '' }
+    form.value = { title: '', kp_id: null, due_date: null, description: '' }
     await load()
-  } catch (e) {
-    ElMessage.error(e.message)
-  }
-}
-
-async function setStatus(row, status) {
-  try {
-    await api.setTaskStatus(row.id, status)
-    row.status = status
   } catch (e) {
     ElMessage.error(e.message)
   }

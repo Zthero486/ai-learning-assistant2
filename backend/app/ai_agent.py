@@ -425,7 +425,7 @@ def _tool_create_knowledge_point(ctx: AgentContext, args: dict) -> dict:
             "(user_id,uuid,material_id,course,title,description,node_code,exam_type,created_at)"
             " VALUES(?,?,?,?,?,?,?,?,?)",
             (ctx.uid, uuid.uuid4().hex, _as_int(args.get("material_id")),
-             ctx.track_name, title, (args.get("description") or "").strip(),
+             ctx.track, title, (args.get("description") or "").strip(),
              node_code, exam_type, ctx.now()),
         )
         conn.commit()
@@ -460,7 +460,7 @@ def _tool_create_material(ctx: AgentContext, args: dict) -> dict:
         cur = conn.execute(
             "INSERT INTO materials(user_id,uuid,title,course,filename,filetype,content,created_at)"
             " VALUES(?,?,?,?,?,?,?,?)",
-            (ctx.uid, uuid.uuid4().hex, title, ctx.track_name,
+            (ctx.uid, uuid.uuid4().hex, title, ctx.track,
              f"ai-{stamp}.md", "markdown", content, ctx.now()),
         )
         conn.commit()
@@ -568,7 +568,7 @@ def _tool_create_task(ctx: AgentContext, args: dict) -> dict:
         cur = conn.execute(
             "INSERT INTO tasks(user_id,uuid,course,kp_id,title,description,due_date,status,created_at)"
             " VALUES(?,?,?,?,?,?,?,?,?)",
-            (ctx.uid, uuid.uuid4().hex, ctx.track_name, _as_int(args.get("kp_id")),
+            (ctx.uid, uuid.uuid4().hex, ctx.track, _as_int(args.get("kp_id")),
              title, (args.get("description") or "").strip(), due, "todo", ctx.now()),
         )
         conn.commit()

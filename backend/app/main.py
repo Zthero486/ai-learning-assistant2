@@ -192,7 +192,35 @@ def init_db() -> None:
     migrate_legacy(conn)
     migrate_history(conn)
     qushi.ensure_syllabus(conn)
+    _normalize_courses(conn)
     conn.close()
+
+
+# 课程列历史上有三种写法：英文 track（party）、中文课程名（党史）、'未分类'。
+# 2026-11-07 起按用户要求严格按课程隔离，统一归一成英文 track 再过滤；
+# 时间轴(events)是全局共用的，明确不参与归一与隔离。
+_COURSE_ALIASES = {
+    "party": "party", "党史": "party", "中国党史": "party",
+    "prc": "prc", "新中国史": "prc", "中华人民共和国史": "prc",
+    "reform": "reform", "改革开放史": "reform",
+    "socialism": "socialism", "社会主义发展史": "socialism",
+}
+
+
+def _course_norm(v) -> str:
+    """把任意写法的课程名归一成英文 track；认不出的原样返回（如 '未分类'）。"""
+    s = str(v or "").strip()
+    return _COURSE_ALIASES.get(s, s)
+
+
+def _normalize_courses(conn: sqlite3.Connection) -> None:
+    """存量数据一次性归一（幂等）：materials / knowledge_points / tasks.course。"""
+    for old, new in _COURSE_ALIASES.items():
+        if old == new:
+            continue
+        for table in ("materials", "knowledge_points", "tasks"):
+            conn.execute(f"UPDATE {table} SET course=? WHERE course=?", (new, old))
+    conn.commit()
 
 
 USER_TABLES = (
@@ -722,7 +750,8 @@ async def upload_material(
             uid,
             uuid.uuid4().hex,
             Path(file.filename).stem,
-            course.strip() or "未分类",
+            (_course_norm(course) if _course_norm(course) in _COURSE_ALIASES.values()
+             else (_user_track(uid) or "未分类")),
             save_name,
             ALLOWED_EXT[ext],
             content,
@@ -744,10 +773,12 @@ async def upload_material(
 @app.get("/api/materials")
 def list_materials(course: str = None, uid: int = Depends(require_user)):
     conn = db()
-    if course:
+    # 严格按课程隔离：优先取显式参数，否则用当前账号选的课程；未选课不隔离
+    target = _course_norm(course) if course else _user_track(uid)
+    if target:
         rows = conn.execute(
             "SELECT id,title,course,filetype,created_at,length(content) AS chars FROM materials WHERE course=? AND user_id=? ORDER BY id DESC",
-            (course, uid),
+            (target, uid),
         ).fetchall()
     else:
         rows = conn.execute(
@@ -804,7 +835,8 @@ def create_kp(body: dict, uid: int = Depends(require_user)):
             uid,
             uuid.uuid4().hex,
             body.get("material_id"),
-            body.get("course", "未分类"),
+            _course_norm(body.get("course")) if _course_norm(body.get("course")) in _COURSE_ALIASES.values()
+            else (_user_track(uid) or "未分类"),
             title,
             body.get("description", ""),
             node_code,
@@ -820,22 +852,26 @@ def create_kp(body: dict, uid: int = Depends(require_user)):
 
 @app.get("/api/knowledge-points")
 def list_kps(course: str = None, track: str = "", node_code: str = "", uid: int = Depends(require_user)):
-    """track 有值时只看这门课的知识点（按 node_code 前缀过滤）。"""
+    """只看本课的知识点：优先显式 track 参数，否则用账号选的课程。
+
+    隔离用 node_code 前缀而不是 course 列 —— 手建数据可能只打了粗标签（node_code=track，
+    不带 -xx-xx），所以必须写成 (node_code=? OR node_code LIKE 'track-%')，只写 LIKE 会漏。"""
     conn = db()
     sql = """SELECT k.*, m.title AS material_title,
              (SELECT COUNT(*) FROM questions q WHERE q.kp_id=k.id) AS question_count
              FROM knowledge_points k LEFT JOIN materials m ON m.id=k.material_id"""
     params = [uid]
     sql += " WHERE k.user_id=?"
+    eff_track = track or _user_track(uid)
     if course:
         sql += " AND k.course=?"
-        params.append(course)
+        params.append(_course_norm(course))
     if node_code:
         sql += " AND k.node_code=?"
         params.append(node_code)
-    elif track:
-        sql += " AND k.node_code LIKE ?"
-        params.append(f"{track}-%")
+    elif eff_track:
+        sql += " AND (k.node_code=? OR k.node_code LIKE ?)"
+        params.extend([eff_track, f"{eff_track}-%"])
     sql += " ORDER BY k.id DESC"
     rows = conn.execute(sql, params).fetchall()
     conn.close()
@@ -896,7 +932,9 @@ def create_task(body: dict, uid: int = Depends(require_user)):
         (
             uid,
             uuid.uuid4().hex,
-            body.get("course", "未分类"),
+            # 课程归一：没传/传了「未分类」就落到当前账号选的课程，保证隔离后还能看到
+            _course_norm(body.get("course")) if _course_norm(body.get("course")) in _COURSE_ALIASES.values()
+            else (_user_track(uid) or "未分类"),
             body.get("kp_id"),
             title,
             body.get("description", ""),
@@ -914,14 +952,18 @@ def create_task(body: dict, uid: int = Depends(require_user)):
 @app.get("/api/tasks")
 def list_tasks(uid: int = Depends(require_user)):
     conn = db()
-    rows = conn.execute(
-        """SELECT t.*, k.title AS kp_title,
-           CASE WHEN t.due_date IS NOT NULL AND t.status!='done' AND date(t.due_date)<date('now','localtime')
-                THEN 1 ELSE 0 END AS overdue
-           FROM tasks t LEFT JOIN knowledge_points k ON k.id=t.kp_id
-           WHERE t.user_id=? ORDER BY t.id DESC""",
-        (uid,),
-    ).fetchall()
+    sql = """SELECT t.*, k.title AS kp_title,
+       CASE WHEN t.due_date IS NOT NULL AND t.status!='done' AND date(t.due_date)<date('now','localtime')
+            THEN 1 ELSE 0 END AS overdue
+       FROM tasks t LEFT JOIN knowledge_points k ON k.id=t.kp_id
+       WHERE t.user_id=?"""
+    params = [uid]
+    track = _user_track(uid)
+    if track:
+        sql += " AND t.course=?"  # 严格按课程隔离：切到别的课看不到这门课的任务
+        params.append(track)
+    sql += " ORDER BY t.id DESC"
+    rows = conn.execute(sql, params).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -1229,6 +1271,10 @@ def generate_personal(body: dict, uid: int = Depends(require_user)):
              LEFT JOIN knowledge_points k ON k.id = q.kp_id
              WHERE w.user_id=? AND w.resolved=0"""
     params: list = [uid]
+    track = _user_track(uid)
+    if track:
+        sql += " AND k.course=?"  # 严格按课程隔离：出的同类题也只出自本课错题
+        params.append(track)
     if kp_id:
         sql += " AND q.kp_id=?"
         params.append(kp_id)
@@ -1314,6 +1360,10 @@ def list_questions(kp_id: int = None, uid: int = Depends(require_user)):
              LEFT JOIN knowledge_points k ON k.id=q.kp_id"""
     params = [uid]
     sql += " WHERE q.user_id=?"
+    track = _user_track(uid)
+    if track:
+        sql += " AND k.course=?"  # 严格按课程隔离（题目的课目跟知识点走）
+        params.append(track)
     if kp_id:
         sql += " AND q.kp_id=?"
         params.append(kp_id)
@@ -1416,20 +1466,26 @@ def submit_practice(body: dict, uid: int = Depends(require_user)):
 
 @app.get("/api/practice/summary")
 def practice_summary(uid: int = Depends(require_user)):
-    """自测页首页卡片的数据：今天练了多少、总题量、错题存量。
-
-    一次查询给齐，避免前端为拼几个数字发四个请求。
-    """
+    """自测页首页卡片的数据：今天练了多少、总题量、错题存量（均限本课）。"""
     conn = db()
     today = now()[:10]
+    track = _user_track(uid)
+    cq = ""  # 题目按课程过滤（题目跟知识点走）
+    cw = ""  # 错题同样经题目挂到知识点
+    qps = []
+    if track:
+        cq = " AND (kp_id IN (SELECT id FROM knowledge_points WHERE course=?))"
+        cw = (" AND question_id IN (SELECT q.id FROM questions q "
+              "LEFT JOIN knowledge_points k ON k.id=q.kp_id WHERE k.course=?)")
+        qps = [track]
     row = conn.execute(
-        """SELECT
-             (SELECT COUNT(*) FROM questions WHERE user_id=?) AS total,
+        f"""SELECT
+             (SELECT COUNT(*) FROM questions WHERE user_id=?{cq}) AS total,
              (SELECT COUNT(*) FROM practice_records WHERE user_id=? AND created_at LIKE ?) AS today_total,
              (SELECT COUNT(*) FROM practice_records WHERE user_id=? AND created_at LIKE ? AND correct=1) AS today_correct,
-             (SELECT COUNT(*) FROM wrong_book WHERE user_id=? AND resolved=0) AS active_wrong,
-             (SELECT COUNT(*) FROM wrong_book WHERE user_id=? AND resolved=1) AS mastered""",
-        (uid, uid, f"{today}%", uid, f"{today}%", uid, uid),
+             (SELECT COUNT(*) FROM wrong_book WHERE user_id=? AND resolved=0{cw}) AS active_wrong,
+             (SELECT COUNT(*) FROM wrong_book WHERE user_id=? AND resolved=1{cw}) AS mastered""",
+        (uid, *qps, uid, f"{today}%", uid, f"{today}%", uid, *qps, uid, *qps),
     ).fetchone()
     conn.close()
     return dict(row)
@@ -1471,6 +1527,10 @@ def wrong_book(only_unresolved: bool = True, uid: int = Depends(require_user)):
              LEFT JOIN knowledge_points k ON k.id=q.kp_id"""
     params = [uid]
     sql += " WHERE w.user_id=?"
+    track = _user_track(uid)
+    if track:
+        sql += " AND k.course=?"  # 严格按课程隔离
+        params.append(track)
     if only_unresolved:
         sql += " AND w.resolved=0"
     sql += " ORDER BY w.last_wrong_at DESC"
@@ -1487,14 +1547,17 @@ def review_due(limit: int = 20, uid: int = Depends(require_user)):
     两者是不同的视图：错题本是档案，这里是今天的作业。
     """
     conn = db()
-    rows = conn.execute(
-        """SELECT w.*, q.question, q.answer, q.kp_id, k.title AS kp_title, k.course AS course,
+    sql = """SELECT w.*, q.question, q.answer, q.kp_id, k.title AS kp_title, k.course AS course,
                   (SELECT COUNT(*) FROM practice_records pr WHERE pr.question_id=q.id) AS attempts
            FROM wrong_book w JOIN questions q ON q.id=w.question_id
            LEFT JOIN knowledge_points k ON k.id=q.kp_id
-           WHERE w.user_id=? AND w.resolved=0""",
-        (uid,),
-    ).fetchall()
+           WHERE w.user_id=? AND w.resolved=0"""
+    params = [uid]
+    track = _user_track(uid)
+    if track:
+        sql += " AND k.course=?"  # 严格按课程隔离
+        params.append(track)
+    rows = conn.execute(sql, params).fetchall()
     conn.close()
     items = _decorate_wrong(rows)
     due = sorted([d for d in items if d["srs_due"]], key=lambda d: d["srs_days_until"])
@@ -1657,6 +1720,10 @@ def global_search(q: str, uid: int = Depends(require_user)):
     like = f"%{q}%"
     conn = db()
     limit = 10
+    # 严格按课程隔离：搜索结果也只出当前账号选的课程（时间轴不在搜索范围，本来就全局）
+    track = _user_track(uid)
+    course_cond = " AND course=?" if track else ""
+    course_params = [track] if track else []
 
     def snip(text: str) -> str:
         text = text or ""
@@ -1675,8 +1742,8 @@ def global_search(q: str, uid: int = Depends(require_user)):
             "snippet": snip(r["content"]),
         }
         for r in conn.execute(
-            f"SELECT id,title,course,content FROM materials WHERE user_id=? AND (title LIKE ? OR content LIKE ?) ORDER BY id DESC LIMIT {limit}",
-            (uid, like, like),
+            f"SELECT id,title,course,content FROM materials WHERE user_id=?{course_cond} AND (title LIKE ? OR content LIKE ?) ORDER BY id DESC LIMIT {limit}",
+            (uid, *course_params, like, like),
         ).fetchall()
     ]
     kps = [
@@ -1687,8 +1754,8 @@ def global_search(q: str, uid: int = Depends(require_user)):
             "snippet": snip(r["description"]),
         }
         for r in conn.execute(
-            f"SELECT id,title,course,description FROM knowledge_points WHERE user_id=? AND (title LIKE ? OR description LIKE ?) ORDER BY id DESC LIMIT {limit}",
-            (uid, like, like),
+            f"SELECT id,title,course,description FROM knowledge_points WHERE user_id=?{course_cond} AND (title LIKE ? OR description LIKE ?) ORDER BY id DESC LIMIT {limit}",
+            (uid, *course_params, like, like),
         ).fetchall()
     ]
     questions = [
@@ -1696,8 +1763,8 @@ def global_search(q: str, uid: int = Depends(require_user)):
         for r in conn.execute(
             f"""SELECT q.id, q.question, k.title AS kp_title FROM questions q
                 LEFT JOIN knowledge_points k ON k.id=q.kp_id
-                WHERE q.user_id=? AND (q.question LIKE ? OR q.answer LIKE ?) ORDER BY q.id DESC LIMIT {limit}""",
-            (uid, like, like),
+                WHERE q.user_id=?{course_cond.replace('course', 'k.course')} AND (q.question LIKE ? OR q.answer LIKE ?) ORDER BY q.id DESC LIMIT {limit}""",
+            (uid, *course_params, like, like),
         ).fetchall()
     ]
     tasks = [
@@ -1708,8 +1775,8 @@ def global_search(q: str, uid: int = Depends(require_user)):
             "snippet": snip(r["description"]),
         }
         for r in conn.execute(
-            f"SELECT id,title,description,status FROM tasks WHERE user_id=? AND (title LIKE ? OR description LIKE ?) ORDER BY id DESC LIMIT {limit}",
-            (uid, like, like),
+            f"SELECT id,title,description,status FROM tasks WHERE user_id=?{course_cond} AND (title LIKE ? OR description LIKE ?) ORDER BY id DESC LIMIT {limit}",
+            (uid, *course_params, like, like),
         ).fetchall()
     ]
     conn.close()
