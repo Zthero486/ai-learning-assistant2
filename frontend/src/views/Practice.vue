@@ -338,7 +338,9 @@ watch(() => route.query.fresh, (v) => {
   if (!v) return
   pendingFresh = String(v)
   router.replace({ query: {} }) // 立即清标记，刷新不会重复弹
-  tryStartFresh()
+  // 人已在本页时题库是进页时的旧列表，必须重拉才能拿到 AI 刚写的题；
+  // 从别的页跳过来时组件刚挂载、onMounted 里的 load() 会兜住，这里多拉一次幂等无害
+  load() // load() 末尾会调 tryStartFresh()
 })
 
 function tryStartFresh() {
