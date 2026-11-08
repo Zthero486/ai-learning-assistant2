@@ -131,9 +131,10 @@ export default {
   // 资料
   listMaterials: (course) => request(`/api/materials${course ? `?course=${encodeURIComponent(course)}` : ''}`),
   getMaterial: (id) => request(`/api/materials/${id}`),
-  uploadMaterial: (file, course) => {
+  uploadMaterial: (file, course, filename) => {
     const fd = new FormData()
-    fd.append('file', file)
+    // 传 Blob 快照时必须显式给文件名，否则后端只能拿到 "blob"
+    fd.append('file', file, filename || file.name || 'upload')
     fd.append('course', course)
     return request('/api/materials/upload', { method: 'POST', body: fd })
   },

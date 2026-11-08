@@ -30,7 +30,7 @@
         <el-card class="page-card">
           <template #header>史实要点掌握情况（正确率）</template>
           <el-empty v-if="!perKp.length" description="先导入史料、建立要点并完成自测，这里会出现统计" />
-          <div v-for="k in perKp" :key="k.kp_id" class="kp-row">
+          <div v-for="k in perKpShown" :key="k.kp_id" class="kp-row">
             <span class="kp-title">{{ k.title }}</span>
             <el-tag v-if="k.weak" type="danger" size="small" style="margin-right:8px">薄弱</el-tag>
             <el-progress
@@ -39,6 +39,13 @@
               :status="k.weak ? 'exception' : (k.accuracy >= 80 ? 'success' : undefined)"
             />
             <span class="muted">{{ k.attempts }} 次</span>
+          </div>
+          <div
+            v-if="perKp.length > KP_PREVIEW"
+            class="kp-toggle"
+            @click="showAllKp = !showAllKp"
+          >
+            {{ showAllKp ? '收起 ↑' : `展开全部 ${perKp.length} 条（其余 ${kpHidden} 条）↓` }}
           </div>
         </el-card>
       </el-col>
@@ -97,6 +104,19 @@ const totalCards = computed(() => [
 
 const perKp = computed(() => stats.value.per_kp)
 
+// 默认只亮 5 条：薄弱的排前面、正确率低的其次，收缩也不丢关键信息
+const KP_PREVIEW = 5
+const showAllKp = ref(false)
+const perKpSorted = computed(() =>
+  [...perKp.value].sort(
+    (a, b) => (b.weak ? 1 : 0) - (a.weak ? 1 : 0) || (a.accuracy ?? 100) - (b.accuracy ?? 100)
+  )
+)
+const perKpShown = computed(() =>
+  showAllKp.value ? perKpSorted.value : perKpSorted.value.slice(0, KP_PREVIEW)
+)
+const kpHidden = computed(() => perKp.value.length - KP_PREVIEW)
+
 onMounted(async () => {
   try {
     stats.value = await api.statsOverview()
@@ -125,4 +145,13 @@ onMounted(async () => {
 .kp-row { display: flex; align-items: center; margin: 10px 0; gap: 4px; }
 .kp-title { width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .due-row { margin: 8px 0; }
+.kp-toggle {
+  margin-top: 8px;
+  text-align: center;
+  color: #409eff;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+.kp-toggle:hover { text-decoration: underline; }
 </style>

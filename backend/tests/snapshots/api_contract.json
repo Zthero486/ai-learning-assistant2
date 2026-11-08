@@ -1377,6 +1377,7 @@
       "node": {
         "body": {
           "code": "string",
+          "content": "string",
           "events": "list<any>",
           "kps": "list<any>",
           "level": "integer",

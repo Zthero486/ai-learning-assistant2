@@ -90,7 +90,8 @@ def init_db() -> None:
             parent_code TEXT NOT NULL DEFAULT '',
             title TEXT NOT NULL,
             period TEXT NOT NULL DEFAULT '',
-            order_no INTEGER NOT NULL DEFAULT 0
+            order_no INTEGER NOT NULL DEFAULT 0,
+            content TEXT NOT NULL DEFAULT ''
         );
         CREATE INDEX IF NOT EXISTS idx_syllabus_track ON syllabus_nodes(track, level, order_no);
 
@@ -188,6 +189,7 @@ def init_db() -> None:
     # （wrong_book 重建时 user_id 列有外键，必须先保证 users.id=1 存在）
     migrate_uuid(conn)
     migrate_qushi(conn)
+    _migrate_syllabus_content(conn)
     ensure_demo_user(conn)
     migrate_legacy(conn)
     migrate_history(conn)
@@ -205,6 +207,14 @@ _COURSE_ALIASES = {
     "reform": "reform", "改革开放史": "reform",
     "socialism": "socialism", "社会主义发展史": "socialism",
 }
+
+
+def _migrate_syllabus_content(conn: sqlite3.Connection) -> None:
+    """老库补 syllabus_nodes.content 列（幂等）；正文内容由 ensure_syllabus 灌入。"""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(syllabus_nodes)")}
+    if "content" not in cols:
+        conn.execute("ALTER TABLE syllabus_nodes ADD COLUMN content TEXT NOT NULL DEFAULT ''")
+        conn.commit()
 
 
 def _course_norm(v) -> str:
@@ -627,6 +637,7 @@ def get_syllabus_node(code: str, uid: int = Depends(require_user)):
         "path": _node_path(code),
         "level": row["level"],
         "period": row["period"],
+        "content": row["content"] or "",
         "kps": kps,
         "question_count": qcount,
         "events": events,

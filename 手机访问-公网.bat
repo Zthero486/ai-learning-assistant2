@@ -66,6 +66,9 @@ if exist "%LOG%" (
   echo.
   echo   日志里的地址记录（供查找）：
   findstr /C:".trycloudflare.com" "%LOG%"
+  powershell -NoProfile -Command "$t=Get-Content -Raw -Encoding UTF8 '%LOG%'; $m=[regex]::Match($t,'https://[a-z0-9-]+\.trycloudflare\.com'); if($m.Success){ $m.Value | Set-Content -Encoding ASCII '%~dp0当前公网地址.txt' }" >nul 2>&1
+  echo.
+  echo   当前地址已写入：当前公网地址.txt（忘记地址就打开这个文件）
 )
 echo.
 echo   手机/平板浏览器打开后用「添加到主屏幕」当 App

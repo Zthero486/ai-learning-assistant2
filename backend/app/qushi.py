@@ -15,9 +15,11 @@ from pathlib import Path
 
 DATA_FILE = Path(__file__).with_name("seed_data") / "qushi.json"
 CONTENT_FILE = Path(__file__).with_name("seed_data") / "qushi_content.json"
+TEXTS_FILE = Path(__file__).with_name("seed_data") / "qushi_texts.json"
 
 _CACHE = None
 _CONTENT = None
+_TEXTS = None
 
 # 事件种类 → 中文标签
 KIND_LABEL = {
@@ -38,6 +40,17 @@ def content() -> dict:
         except FileNotFoundError:
             _CONTENT = {"events": [], "materials": [], "kps": []}
     return _CONTENT
+
+
+def texts() -> dict:
+    """教材正文：{node_code: "段落1\n\n段落2"}，只覆盖已撰写的课程。"""
+    global _TEXTS
+    if _TEXTS is None:
+        try:
+            _TEXTS = json.loads(TEXTS_FILE.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            _TEXTS = {}
+    return _TEXTS
 
 
 def load() -> dict:
@@ -115,7 +128,15 @@ def ensure_syllabus(conn) -> int:
                     (section_code(track, ci, si), track, 2, ccode, sec, chap.get("p", ""), si),
                 )
                 added += cur.rowcount
-    if added:
+    # 教材正文：内置节点 content 为空且内容包里有对应文本时补写（幂等）
+    filled = 0
+    for code, text in texts().items():
+        cur = conn.execute(
+            "UPDATE syllabus_nodes SET content=? WHERE code=? AND (content IS NULL OR content='')",
+            (text, code),
+        )
+        filled += cur.rowcount
+    if added or filled:
         conn.commit()
     return added
 

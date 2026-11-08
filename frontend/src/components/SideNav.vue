@@ -2,9 +2,34 @@
   <div class="nav">
     <div class="logo">
       <span class="logo-text">📜 四史学习助手</span>
-      <span class="track-chip" v-if="trackName" :style="{ borderColor: trackColor, color: trackColor }">
-        {{ trackName }}
-      </span>
+      <div v-if="trackName" class="track-wrap">
+        <span
+          class="track-chip"
+          :style="{ borderColor: trackColor, color: trackColor }"
+          title="点击快速切换课程"
+          @click.stop="menuOpen = !menuOpen"
+        >
+          {{ trackName }}
+          <el-icon class="chip-caret"><CaretBottom /></el-icon>
+        </span>
+        <transition name="el-fade-in-linear">
+          <div v-if="menuOpen" class="track-menu">
+            <button
+              v-for="(t, k) in TRACKS"
+              :key="k"
+              class="track-menu-item"
+              :class="{ current: k === auth.track() }"
+              :disabled="k === auth.track() || switching"
+              @click.stop="switchTrack(k)"
+            >
+              <span class="dot" :style="{ background: t.color }" />
+              {{ t.name }}
+              <el-icon v-if="k === auth.track()" class="ok"><Check /></el-icon>
+            </button>
+          </div>
+        </transition>
+        <div v-if="menuOpen" class="track-mask" @click="menuOpen = false" />
+      </div>
     </div>
     <el-menu :default-active="$route.path" router @select="onSelect">
       <el-menu-item index="/"><el-icon><Odometer /></el-icon>学习看板</el-menu-item>
@@ -58,10 +83,12 @@
 <script setup>
 // 侧栏导航抽成组件：桌面固定左侧，手机塞进抽屉，一套 DOM 两处复用
 import { ref, watch, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import QRCode from 'qrcode'
 import {
   Odometer, FolderOpened, Collection, List, EditPen, WarningFilled, ChatDotRound, Clock, Notebook,
+  CaretBottom, Check,
 } from '@element-plus/icons-vue'
 import { auth } from '../api'
 import api from '../api'
@@ -132,6 +159,27 @@ function openSearch() {
   emit('search')
   emit('navigate')
 }
+
+// ---------- 点课程徽标快速切换四史 ----------
+const router = useRouter()
+const switching = ref(false)
+const menuOpen = ref(false)
+async function switchTrack(key) {
+  if (!key || key === auth.track() || switching.value) return
+  switching.value = true
+  try {
+    const res = await api.setTrack(key)
+    auth.setTrack(res.track)
+    menuOpen.value = false
+    ElMessage.success(`已切换到「${TRACKS[key].name}」，页面即将刷新`)
+    // 整页刷新：所有页面数据都按课程服务端过滤，刷新后天然一致
+    setTimeout(() => router.go(0), 400)
+  } catch (e) {
+    ElMessage.error(e.message || '切换失败')
+  } finally {
+    switching.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -139,9 +187,29 @@ function openSearch() {
 .logo { padding: 16px 16px 10px; }
 .logo-text { display: block; font-weight: 700; font-size: 16px; color: #409eff; }
 .track-chip {
-  display: inline-block; margin-top: 8px; font-size: 11px;
-  border: 1px solid; border-radius: 10px; padding: 1px 8px;
+  display: inline-flex; align-items: center; gap: 3px; margin-top: 8px; font-size: 11px;
+  border: 1px solid; border-radius: 10px; padding: 1px 8px; cursor: pointer;
+  transition: background .15s;
 }
+.track-chip:hover { background: #f5f7fa; }
+.chip-caret { font-size: 10px; }
+.track-wrap { position: relative; display: inline-block; }
+.track-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 2100;
+  background: #fff; border: 1px solid #e4e7ed; border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .12); padding: 4px; min-width: 150px;
+}
+.track-menu-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  border: none; background: none; padding: 8px 10px; font-size: 13px;
+  color: #303133; cursor: pointer; border-radius: 6px; text-align: left;
+}
+.track-menu-item:hover:not(:disabled) { background: #f0f6ff; color: #409eff; }
+.track-menu-item:disabled { cursor: default; color: #909399; }
+.track-menu-item.current { font-weight: 700; }
+.track-menu-item .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.track-menu-item .ok { margin-left: auto; color: #67c23a; }
+.track-mask { position: fixed; inset: 0; z-index: 2050; }
 .nav .el-menu { flex: 1; border-right: none; }
 .user-box { padding: 12px 16px; border-top: 1px solid #e4e7ed; }
 .search-hint {
