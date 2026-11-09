@@ -1402,6 +1402,21 @@ def list_questions(kp_id: int = None, uid: int = Depends(require_user)):
     return [dict(r) for r in rows]
 
 
+@app.delete("/api/questions/{qid}")
+def delete_question(qid: int, uid: int = Depends(require_user)):
+    """删题并级联清掉它的作答记录与错题条目，避免错题本出现死链。"""
+    conn = db()
+    cur = conn.execute("DELETE FROM questions WHERE id=? AND user_id=?", (qid, uid))
+    if not cur.rowcount:
+        conn.close()
+        raise HTTPException(404, "题目不存在")
+    conn.execute("DELETE FROM practice_records WHERE question_id=? AND user_id=?", (qid, uid))
+    conn.execute("DELETE FROM wrong_book WHERE question_id=? AND user_id=?", (qid, uid))
+    conn.commit()
+    conn.close()
+    return {"deleted": qid}
+
+
 # 连续答对几次算「掌握」，移出活跃错题库（一次答对可能是蒙的）
 MASTERY_STREAK = 2
 
@@ -1545,6 +1560,21 @@ def _decorate_wrong(rows: list, now_dt: datetime | None = None) -> list:
         d["srs_retrievability"] = meta["retrievability"]
         out.append(d)
     return out
+
+
+@app.post("/api/wrong-book/clear")
+def clear_wrong_book(body: dict, uid: int = Depends(require_user)):
+    """清空错题本：only_unresolved=true 只清未掌握的，默认全部清。"""
+    only = bool(body.get("only_unresolved", False))
+    conn = db()
+    sql = "DELETE FROM wrong_book WHERE user_id=?"
+    if only:
+        sql += " AND resolved=0"
+    cur = conn.execute(sql, (uid,))
+    conn.commit()
+    n = cur.rowcount
+    conn.close()
+    return {"cleared": n}
 
 
 @app.get("/api/wrong-book")

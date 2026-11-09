@@ -2,10 +2,11 @@
 """AI 学习代理（v3）：让软件里配置的大模型**真正能操作软件**。
 
 设计要点
-- 工具即权限边界：模型只能调用本文件 `TOOLS` 里登记的 17 个函数，读写都强制带
+- 工具即权限边界：模型只能调用本文件 `TOOLS` 里登记的 24 个函数，读写都强制带
   `user_id`，写入的 node_code 必须落在当前选中的那一门课里。
-- 不提供任何删除类工具：AI 可以新建、补充，但不能删学生的数据。
-- 只读工具（10 个）任何情况下都开；写入工具（7 个）受 `allow_write` 开关控制。
+- 删除类工具（7 个）已开放：单条删除必须先查实 id；清空错题本一次调用完成。
+  删除不可恢复，提示词里有明确守则（先核实、汇报删了什么）。
+- 只读工具（10 个）任何情况下都开；写入/删除工具（14 个）受 `allow_write` 开关控制。
 - 运行是显式状态机：act（模型+工具）→ review（质检员判定达标与否）→
   不达标回流 act（最多 2 次）→ finalize 出结论，防止「做一半就说完成」。
 - 多轮 tool-calling 循环有硬上限（轮数 6 / 调用 16），防止模型打转烧额度。
@@ -56,6 +57,14 @@ WRITE_BUDGETS = {
     "create_material": 2,
     "create_event": 2,
     "save_memory": 3,
+    # 删除类：单条删除给足批量清理的余量；清空错题本一次搞定
+    "delete_task": 12,
+    "delete_knowledge_point": 12,
+    "delete_material": 6,
+    "delete_event": 6,
+    "delete_question": 15,
+    "delete_memory": 5,
+    "clear_wrong_book": 1,
 }
 
 EXAM_TYPES = {
@@ -706,6 +715,78 @@ def _tool_list_memory(ctx: AgentContext, args: dict) -> dict:
     return {"ok": True, "items": [dict(r) for r in rows]}
 
 
+# ---------------- 删除类工具（学生明确要求后开放；删除不可恢复） ----------------
+
+def _delete_one(ctx: AgentContext, table: str, rid: int, label: str) -> dict:
+    """单行删除的公共路径：必须带 id，只删本人数据，404 时提示先核实。"""
+    if rid is None:
+        return {"ok": False, "error": f"{label} 必须传 id（先调只读工具查到具体 id 再删）"}
+    conn = ctx.conn()
+    try:
+        cur = conn.execute(f"DELETE FROM {table} WHERE id=? AND user_id=?", (rid, ctx.uid))
+        conn.commit()
+        if not cur.rowcount:
+            return {"ok": False, "error": f"{label} #{rid} 不存在——先用只读工具核实 id，别凭记忆猜"}
+        return {"ok": True, "deleted": rid, "message": f"已删除{label} #{rid}"}
+    finally:
+        conn.close()
+
+
+def _tool_delete_task(ctx: AgentContext, args: dict) -> dict:
+    return _delete_one(ctx, "tasks", _as_int(args.get("id")), "复习任务")
+
+
+def _tool_delete_knowledge_point(ctx: AgentContext, args: dict) -> dict:
+    return _delete_one(ctx, "knowledge_points", _as_int(args.get("id")), "知识点")
+
+
+def _tool_delete_material(ctx: AgentContext, args: dict) -> dict:
+    return _delete_one(ctx, "materials", _as_int(args.get("id")), "史料资料")
+
+
+def _tool_delete_event(ctx: AgentContext, args: dict) -> dict:
+    return _delete_one(ctx, "events", _as_int(args.get("id")), "时间轴事件")
+
+
+def _tool_delete_memory(ctx: AgentContext, args: dict) -> dict:
+    return _delete_one(ctx, "user_memory", _as_int(args.get("id")), "AI 记忆")
+
+
+def _tool_delete_question(ctx: AgentContext, args: dict) -> dict:
+    """删题并级联清掉它的作答记录与错题条目（与 DELETE /api/questions/{qid} 同逻辑）。"""
+    qid = _as_int(args.get("id"))
+    if qid is None:
+        return {"ok": False, "error": "id 必填（先调只读工具查到题目 id）"}
+    conn = ctx.conn()
+    try:
+        cur = conn.execute("DELETE FROM questions WHERE id=? AND user_id=?", (qid, ctx.uid))
+        if not cur.rowcount:
+            return {"ok": False, "error": f"题目 #{qid} 不存在——先核实 id"}
+        conn.execute("DELETE FROM practice_records WHERE question_id=? AND user_id=?", (qid, ctx.uid))
+        conn.execute("DELETE FROM wrong_book WHERE question_id=? AND user_id=?", (qid, ctx.uid))
+        conn.commit()
+        return {"ok": True, "deleted": qid, "message": f"已删除题目 #{qid}（含其作答记录与错题条目）"}
+    finally:
+        conn.close()
+
+
+def _tool_clear_wrong_book(ctx: AgentContext, args: dict) -> dict:
+    """清空错题本。only_unresolved=true 只清未掌握的。一次调用完成，不逐条删。"""
+    only = bool(args.get("only_unresolved", False))
+    conn = ctx.conn()
+    try:
+        sql = "DELETE FROM wrong_book WHERE user_id=?"
+        if only:
+            sql += " AND resolved=0"
+        cur = conn.execute(sql, (ctx.uid,))
+        conn.commit()
+        n = cur.rowcount
+        return {"ok": True, "cleared": n,
+                "message": f"已清空错题本 {n} 条" + ("（未掌握的）" if only else "")}
+    finally:
+        conn.close()
+
+
 def _tool_create_event(ctx: AgentContext, args: dict) -> dict:
     title = (args.get("title") or "").strip()
     year = _as_int(args.get("year"))
@@ -760,6 +841,7 @@ def _spec(name, desc, props, required=(), write=False):
 
 _S = lambda desc: {"type": "string", "description": desc}
 _I = lambda desc: {"type": "integer", "description": desc}
+_B = lambda desc: {"type": "boolean", "description": desc}
 
 TOOLS = {
     "list_syllabus": dict(
@@ -893,6 +975,41 @@ TOOLS = {
               {"kind": _S("可选：按类型过滤"), "limit": _I("最多返回几条，默认 20")}),
         fn=_tool_list_memory,
     ),
+    "delete_task": dict(
+        _spec("delete_task", "删除一条复习任务（不可恢复）。id 必须先用只读工具查实。",
+              {"id": _I("任务 id")}, ["id"], write=True),
+        fn=_tool_delete_task,
+    ),
+    "delete_knowledge_point": dict(
+        _spec("delete_knowledge_point", "删除一条知识点（不可恢复；挂在其下的题目不受影响）。id 必须先查实。",
+              {"id": _I("知识点 id")}, ["id"], write=True),
+        fn=_tool_delete_knowledge_point,
+    ),
+    "delete_material": dict(
+        _spec("delete_material", "删除一条史料/资料（不可恢复）。id 必须先查实。",
+              {"id": _I("资料 id")}, ["id"], write=True),
+        fn=_tool_delete_material,
+    ),
+    "delete_event": dict(
+        _spec("delete_event", "删除一条时间轴事件（不可恢复）。id 必须先查实。",
+              {"id": _I("事件 id")}, ["id"], write=True),
+        fn=_tool_delete_event,
+    ),
+    "delete_question": dict(
+        _spec("delete_question", "删除一道题目（不可恢复；其作答记录与错题条目一并删除）。id 必须先查实。",
+              {"id": _I("题目 id")}, ["id"], write=True),
+        fn=_tool_delete_question,
+    ),
+    "delete_memory": dict(
+        _spec("delete_memory", "删除一条 AI 记忆（学生说「忘掉/删掉这条记忆」时用）。",
+              {"id": _I("记忆 id")}, ["id"], write=True),
+        fn=_tool_delete_memory,
+    ),
+    "clear_wrong_book": dict(
+        _spec("clear_wrong_book", "清空错题本（一次调用全清，不要逐条删）。学生说「清空错题本/错题全删」时用。",
+              {"only_unresolved": _B("只清未掌握的？默认 false 全清")}, write=True),
+        fn=_tool_clear_wrong_book,
+    ),
 }
 
 
@@ -970,6 +1087,7 @@ def system_prompt(ctx: AgentContext) -> str:
 12. **出题只入库、不在聊天里做题**：调完 create_questions 后，最终答复**只说生成了几道题、覆盖什么考点**，绝不要把题目题干、选项、答案罗列进对话——界面会自动跳到自测页并直接开始作答，作答数据自动进错题本。聊天里贴题会把学生困在对话里做题，数据不落库，是严重错误。
 13. 收到「【质量审查】」提示时，说明你上一稿被判没达标：只针对缺口补齐（可以再用工具），不要推翻已完成的有效工作，补完重新总结收尾。
 14. 对话中出现值得长期记住的学生信息（考试时间、专业背景、反复暴露的薄弱块、明确偏好），顺手调 save_memory 沉淀；已有的信息不要重复存。
+15. **删除守则**：删除不可恢复。单条删除（delete_*）前必须先用只读工具确认那条数据存在、确实是要删的那条，绝不凭记忆猜 id；删完后在答复里逐条列出删了什么。批量清理优先用一键工具（clear_wrong_book），不要一条一条删；学生说「全部删掉/清空」时，答复里先报告将删的数量再执行，结果如实汇报条数。
 
 内容要求：
 - 口径必须符合权威简史（《百年奋斗重大成就和历史经验的决议》、四本官方简史、二十大报告），重大年份、会议、文件名称不得写错。

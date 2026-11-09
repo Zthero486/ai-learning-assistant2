@@ -88,6 +88,28 @@
         "422"
       ]
     },
+    "DELETE /api/questions/{qid}": {
+      "operation_id": "delete_question_api_questions__qid__delete",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "path",
+          "name": "qid",
+          "required": true,
+          "schema": "integer"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
     "DELETE /api/tasks/{tid}": {
       "operation_id": "delete_task_api_tasks__tid__delete",
       "params": [
@@ -1111,6 +1133,27 @@
     },
     "POST /api/tasks": {
       "operation_id": "create_task_api_tasks_post",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "POST /api/wrong-book/clear": {
+      "operation_id": "clear_wrong_book_api_wrong_book_clear_post",
       "params": [
         {
           "in": "header",

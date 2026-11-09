@@ -23,6 +23,13 @@ export const TOOL_LABEL = {
   tag_wrong_error: '标注错因',
   save_memory: '沉淀记忆',
   list_memory: '查记忆库',
+  delete_task: '删除任务',
+  delete_knowledge_point: '删知识点',
+  delete_material: '删资料',
+  delete_event: '删时间轴事件',
+  delete_question: '删题目',
+  delete_memory: '删记忆',
+  clear_wrong_book: '清空错题本',
   __review__: '质量自查',
 }
 

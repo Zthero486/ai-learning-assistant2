@@ -5,6 +5,7 @@
 """
 
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
@@ -29,7 +30,7 @@ def test_工具数量与权限划分():
     read_only = ai_agent.tool_specs(False)
     full = ai_agent.tool_specs(True)
     assert len(read_only) == 10
-    assert len(full) == 17
+    assert len(full) == 24
     assert all(t["function"]["name"] not in {x["function"]["name"] for x in read_only}
                for t in full if t not in read_only)
     assert all(not t["write"] for t in ai_agent.TOOLS.values() if t["spec"] in read_only)
@@ -125,8 +126,8 @@ def test_未选课时对话接口报错():
 def test_工具清单接口(client):
     client.post("/api/profile/track", json={"track": "party"})
     data = client.get("/api/ai/tools").json()
-    assert len(data["tools"]) == 17
-    assert sum(1 for t in data["tools"] if t["write"]) == 7
+    assert len(data["tools"]) == 24
+    assert sum(1 for t in data["tools"] if t["write"]) == 14
 
 
 def _wrong_id(client) -> int:
@@ -280,3 +281,78 @@ def test_状态机_纯问答跳过审查(party_ctx, monkeypatch):
     assert _states(events) == ["act", "finalize"]
     assert reviewed == []
     assert events[-1]["type"] == "done" and "1935" in events[-1]["reply"]
+
+
+# ---------------- 删除类工具（2026-11-09 开放） ----------------
+
+def test_删除任务(party_ctx):
+    ctx, _ = party_ctx
+    r = ai_agent.execute_tool(ctx, "create_task", {"title": "待删任务"}, allow_write=True)
+    tid = r["id"]
+    d = ai_agent.execute_tool(ctx, "delete_task", {"id": tid}, allow_write=True)
+    assert d["ok"] and d["deleted"] == tid
+    # 再删一次应报不存在，而不是静默成功
+    d2 = ai_agent.execute_tool(ctx, "delete_task", {"id": tid}, allow_write=True)
+    assert d2["ok"] is False and "不存在" in d2["error"]
+
+
+def test_删除必带id且不许跨用户(party_ctx):
+    ctx, _ = party_ctx
+    r = ai_agent.execute_tool(ctx, "delete_task", {}, allow_write=True)
+    assert r["ok"] is False and "id" in r["error"]
+    # 别人的任务删不到（user_id 隔离）
+    r2 = ai_agent.execute_tool(ctx, "delete_task", {"id": 999999}, allow_write=True)
+    assert r2["ok"] is False and "不存在" in r2["error"]
+
+
+def test_删除题目级联清错题(party_ctx):
+    ctx, code = party_ctx
+    kp = ai_agent.execute_tool(ctx, "create_knowledge_point",
+                               {"node_code": code, "title": "级联测试点"}, allow_write=True)
+    qs = ai_agent.execute_tool(ctx, "create_questions",
+                               {"kp_id": kp["id"],
+                                "questions": [{"type": "简答", "question": "级联测试题？",
+                                               "answer": "答案"}]}, allow_write=True)
+    qid = qs["ids"][0]
+    # 制造错题记录
+    ctx_conn = ctx.conn()
+    ctx_conn.execute(
+        "INSERT INTO wrong_book(user_id,question_id,wrong_count,resolved,uuid,last_wrong_at)"
+        " VALUES(?,?,1,0,?,?)", (ctx.uid, qid, uuid.uuid4().hex, ctx.now()))
+    ctx_conn.commit(); ctx_conn.close()
+    d = ai_agent.execute_tool(ctx, "delete_question", {"id": qid}, allow_write=True)
+    assert d["ok"]
+    conn = ctx.conn()
+    left_q = conn.execute("SELECT COUNT(*) FROM questions WHERE id=?", (qid,)).fetchone()[0]
+    left_w = conn.execute("SELECT COUNT(*) FROM wrong_book WHERE question_id=?", (qid,)).fetchone()[0]
+    conn.close()
+    assert left_q == 0 and left_w == 0
+
+
+def test_清空错题本(party_ctx):
+    ctx, code = party_ctx
+    kp = ai_agent.execute_tool(ctx, "create_knowledge_point",
+                               {"node_code": code, "title": "清空测试点"}, allow_write=True)
+    qs = ai_agent.execute_tool(ctx, "create_questions",
+                               {"kp_id": kp["id"],
+                                "questions": [{"type": "简答", "question": "清空测试题？",
+                                               "answer": "答案"}]}, allow_write=True)
+    conn = ctx.conn()
+    conn.execute(
+        "INSERT INTO wrong_book(user_id,question_id,wrong_count,resolved,uuid,last_wrong_at)"
+        " VALUES(?,?,1,0,?,?)", (ctx.uid, qs["ids"][0], uuid.uuid4().hex, ctx.now()))
+    conn.commit(); conn.close()
+    r = ai_agent.execute_tool(ctx, "clear_wrong_book", {}, allow_write=True)
+    assert r["ok"] and r["cleared"] >= 1
+    conn = ctx.conn()
+    n = conn.execute("SELECT COUNT(*) FROM wrong_book WHERE user_id=?", (ctx.uid,)).fetchone()[0]
+    conn.close()
+    assert n == 0
+
+
+def test_删除在只读模式下被拒(party_ctx):
+    ctx, _ = party_ctx
+    r = ai_agent.execute_tool(ctx, "clear_wrong_book", {}, allow_write=False)
+    assert r["ok"] is False and "写入权限" in r["error"]
+    r2 = ai_agent.execute_tool(ctx, "delete_task", {"id": 1}, allow_write=False)
+    assert r2["ok"] is False and "写入权限" in r2["error"]
