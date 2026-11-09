@@ -45,7 +45,8 @@ ALLOWED_EXT = {
     ".txt": "text",
     ".markdown": "markdown",
 }
-MAX_UPLOAD_MB = 20
+# 整本教材 PDF 常见 60~120MB（四史简史一套就 240MB+），20MB 的老上限连一本都传不进来
+MAX_UPLOAD_MB = 200
 CHUNK_SIZE = 500
 MAX_CONTEXT_CHARS = 4000  # 拼进 prompt 的资料上限（build_context 用）
 CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
