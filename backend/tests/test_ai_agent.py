@@ -196,3 +196,87 @@ def test_记忆只读模式不可写(party_ctx):
     r = ai_agent.execute_tool(ctx, "save_memory",
                               {"kind": "profile", "content": "大三"}, allow_write=False)
     assert r["ok"] is False and "写入权限" in r["error"]
+
+
+# ---------------- 状态机（act → review → 回流 → finalize） ----------------
+# 不打网络：把 chat_completion 换成脚本化的假模型，把质检员换成预设裁决，
+# 只验状态迁移本身是否按预期发生。
+
+def _scripted_chat(script):
+    """script: [(kind, payload)]，kind = 'tools' 或 'text'。返回 (fake, calls)。"""
+    calls = []
+
+    def fake(convo, tools=None, **kw):
+        calls.append([dict(m) for m in convo])
+        kind, payload = script[min(len(calls) - 1, len(script) - 1)]
+        if kind == "tools":
+            return {"content": "", "tool_calls": [{
+                "id": f"call_{len(calls)}",
+                "type": "function",
+                "function": {"name": payload, "arguments": "{}"},
+            }]}
+        return {"content": payload, "tool_calls": []}
+
+    return fake, calls
+
+
+def _states(events):
+    return [e.get("state") for e in events if e.get("type") == "state"]
+
+
+def test_状态机_审查不达标会回流(party_ctx, monkeypatch):
+    """质检员第一次判不达标 → 必须回到 act 并把缺口喂回模型，再 review 才收尾。"""
+    ctx, _ = party_ctx
+    fake, calls = _scripted_chat([("tools", "get_my_stats"),
+                                  ("text", "第一稿：你最近在学党史。"),
+                                  ("text", "第二稿：已按你的情况建好 3 天复习任务。")])
+    verdicts = [{"done": False, "gap": "学生要的是复习计划，你只报了个进度"},
+                {"done": True, "gap": ""}]
+    monkeypatch.setattr(ai_agent.ai_helper, "chat_completion", fake)
+    monkeypatch.setattr(ai_agent, "_review_draft",
+                        lambda goal, steps, draft: verdicts.pop(0))
+
+    events = list(ai_agent.run_events(
+        ctx, [{"role": "user", "content": "按我情况排个复习计划"}], allow_write=True))
+
+    assert _states(events) == ["act", "review", "act", "review", "finalize"]
+    # 回流时必须把审查意见作为新一轮输入喂回去
+    reflow_msg = calls[2][-1]
+    assert reflow_msg["role"] == "user" and "质量审查" in reflow_msg["content"]
+    assert "复习计划" in reflow_msg["content"]
+    done = events[-1]
+    assert done["type"] == "done" and "复习任务" in done["reply"]
+    assert done["reviews"] == 2 and done["tool_calls"] == 1
+
+
+def test_状态机_回流有上限(party_ctx, monkeypatch):
+    """质检员一直不达标也不能死循环：到 MAX_REVIEWS 就收尾。"""
+    ctx, _ = party_ctx
+    fake, _calls = _scripted_chat([("tools", "get_my_stats"), ("text", "总是差一点的答复")])
+    monkeypatch.setattr(ai_agent.ai_helper, "chat_completion", fake)
+    monkeypatch.setattr(ai_agent, "_review_draft",
+                        lambda goal, steps, draft: {"done": False, "gap": "还是不行"})
+
+    events = list(ai_agent.run_events(
+        ctx, [{"role": "user", "content": "随便看看"}], allow_write=True))
+
+    assert _states(events).count("review") == ai_agent.MAX_REVIEWS
+    assert _states(events)[-1] == "finalize"
+    assert events[-1]["type"] == "done"
+
+
+def test_状态机_纯问答跳过审查(party_ctx, monkeypatch):
+    """没动过工具 = 纯问答，不该白烧一次质检调用。"""
+    ctx, _ = party_ctx
+    fake, _calls = _scripted_chat([("text", "遵义会议是 1935 年 1 月召开的。")])
+    reviewed = []
+    monkeypatch.setattr(ai_agent.ai_helper, "chat_completion", fake)
+    monkeypatch.setattr(ai_agent, "_review_draft",
+                        lambda *a: reviewed.append(1) or {"done": True, "gap": ""})
+
+    events = list(ai_agent.run_events(
+        ctx, [{"role": "user", "content": "遵义会议哪年开的"}], allow_write=True))
+
+    assert _states(events) == ["act", "finalize"]
+    assert reviewed == []
+    assert events[-1]["type"] == "done" and "1935" in events[-1]["reply"]
