@@ -4,8 +4,8 @@
       <div>
         <h2 class="title">{{ data.track_name }} · 教材目录</h2>
         <div class="muted">
-          {{ data.chapter_count }} 章 {{ data.section_count }} 节 · 已建知识点 {{ data.total_kp }} 个 ·
-          题目 {{ data.total_q }} 道
+          {{ data.chapter_count }} 章 {{ data.section_count }} 节 · 教材正文 {{ charText }} ·
+          知识点 {{ data.total_kp }} 个 · 题目 {{ data.total_q }} 道
         </div>
       </div>
       <el-button size="small" plain @click="$router.push('/welcome')">切换课程</el-button>
@@ -19,9 +19,18 @@
               <el-icon class="caret" :class="{ open: opened.includes(ch.code) }"><ArrowRight /></el-icon>
               <span class="chapter-title">{{ ch.title }}</span>
               <span class="chapter-period">{{ ch.period }}</span>
+              <span class="text-dot" v-if="ch.chars" title="有教材正文"></span>
               <span class="chapter-stat" v-if="ch.kp">{{ ch.kp }}</span>
             </div>
             <div v-show="opened.includes(ch.code)" class="sections">
+              <div
+                class="section chapter-text"
+                :class="{ active: ch.code === active }"
+                @click="pick(ch.code)"
+              >
+                <span class="sec-title">本章正文</span>
+                <span class="sec-chars">{{ ch.chars ? ch.chars + ' 字' : '暂无' }}</span>
+              </div>
               <div
                 v-for="s in ch.sections"
                 :key="s.code"
@@ -29,6 +38,7 @@
                 :class="{ active: s.code === active }"
                 @click="pick(s.code)"
               >
+                <span class="text-dot sm" v-if="s.chars"></span>
                 <span class="sec-title">{{ s.title }}</span>
                 <span class="sec-stat" v-if="s.kp">{{ s.kp }}</span>
               </div>
@@ -43,6 +53,32 @@
           <div class="node-meta">
             <el-tag size="small" effect="plain">{{ node.period || '—' }}</el-tag>
             <span class="muted">知识点 {{ node.kps.length }} 个 · 题目 {{ node.question_count }} 道 · 相关事件 {{ node.events.length }} 条</span>
+          </div>
+
+          <!-- 教材正文 -->
+          <div class="text-block">
+            <div class="block-head text-head">
+              <span>教材正文 <em v-if="node.content" class="text-count">{{ node.content.length }} 字</em></span>
+              <div class="text-tools" v-if="node.content">
+                <el-button link size="small" @click="fontStep(-1)">A-</el-button>
+                <el-button link size="small" @click="fontStep(1)">A+</el-button>
+                <el-button link size="small" @click="textOpen = !textOpen">
+                  {{ textOpen ? '收起' : '展开全文' }}
+                </el-button>
+              </div>
+            </div>
+            <div
+              v-if="node.content"
+              v-show="textOpen"
+              class="text-body"
+              :style="{ fontSize: fontSize + 'px' }"
+            >
+              <p v-for="(p, i) in paragraphs" :key="i">{{ p }}</p>
+            </div>
+            <div v-else class="text-missing">
+              本节正文还没切分出来（教材是扫描版，个别页序错乱）。可以先看「本章正文」，
+              或者用下面的知识点和自测复习。
+            </div>
           </div>
 
           <div class="block-head">
@@ -107,7 +143,7 @@
 
 <script setup>
 import AiInline from '../components/AiInline.vue'
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowRight } from '@element-plus/icons-vue'
@@ -115,18 +151,40 @@ import api, { auth } from '../api'
 
 const route = useRoute()
 const loading = ref(true)
-const data = ref({ chapters: [], chapter_count: 0, section_count: 0, total_kp: 0, total_q: 0, track_name: '' })
+const data = ref({ chapters: [], chapter_count: 0, section_count: 0, total_kp: 0, total_q: 0, total_chars: 0, track_name: '' })
 const opened = ref([])
 const active = ref('')
 const node = ref(null)
 const kpDlg = ref(false)
 const saving = ref(false)
 const form = reactive({ title: '', description: '', exam_type: 'recall' })
+const textOpen = ref(true)
+const fontSize = ref(Number(localStorage.getItem('kp_font') || 15))
 
 const EXAM = { recall: '史实识记', sequence: '时序定位', argument: '史论结合', apply: '现实联系' }
 const KIND = { meeting: '会议', event: '事件', document: '文件' }
 const examLabel = (k) => EXAM[k] || k
 const kindLabel = (k) => KIND[k] || '事件'
+
+const charText = computed(() => {
+  const n = data.value.total_chars || 0
+  if (!n) return '未入库'
+  return n > 10000 ? `${(n / 10000).toFixed(1)} 万字` : `${n} 字`
+})
+
+const paragraphs = computed(() => {
+  const t = node.value?.content || ''
+  return t.split(/\n+/).map((s) => s.trim()).filter(Boolean)
+})
+
+function fontStep(d) {
+  fontSize.value = Math.min(22, Math.max(13, fontSize.value + d))
+  localStorage.setItem('kp_font', String(fontSize.value))
+}
+
+watch(node, () => {
+  textOpen.value = true
+})
 
 function toggle(code) {
   const i = opened.value.indexOf(code)
@@ -185,8 +243,9 @@ onMounted(async () => {
     data.value = await api.syllabus(track)
     if (data.value.chapters.length) {
       opened.value = [data.value.chapters[0].code]
-      const first = data.value.chapters[0].sections[0]
-      if (first) await pick(first.code)
+      // 有正文就先展示本章正文，否则落到第一节
+      const first = data.value.chapters[0]
+      await pick(first.chars ? first.code : (first.sections[0]?.code || first.code))
     }
   } catch (e) {
     ElMessage.error(e.message)
@@ -209,14 +268,25 @@ onMounted(async () => {
 .chapter-title { flex: 1; font-size: 13px; color: #303133; line-height: 1.5; }
 .chapter-period { font-size: 11px; color: #c0c4cc; }
 .chapter-stat { font-size: 11px; color: #409eff; background: #ecf5ff; border-radius: 8px; padding: 0 6px; }
+.text-dot { width: 5px; height: 5px; border-radius: 50%; background: #67c23a; flex: none; }
+.text-dot.sm { width: 4px; height: 4px; background: #c0e0a8; margin-right: 2px; }
 .sections { padding-bottom: 6px; }
 .section { display: flex; align-items: center; gap: 8px; padding: 7px 14px 7px 30px; cursor: pointer; font-size: 12px; color: #606266; line-height: 1.5; }
 .section:hover { background: #f5f7fa; }
 .section.active { background: #ecf5ff; color: #409eff; }
+.section.chapter-text { color: #909399; font-size: 11px; }
+.sec-chars { font-size: 10px; color: #c0c4cc; }
 .sec-title { flex: 1; }
 .sec-stat { color: #409eff; }
 .node-path { font-size: 15px; font-weight: 600; color: #303133; line-height: 1.6; }
 .node-meta { display: flex; align-items: center; gap: 10px; margin: 8px 0 18px; }
+.text-block { background: #fcfcfd; border: 1px solid #f0f2f5; border-radius: 8px; padding: 4px 16px 14px; }
+.text-head { margin-top: 10px; }
+.text-count { font-size: 11px; color: #c0c4cc; font-style: normal; margin-left: 6px; }
+.text-tools { display: flex; align-items: center; gap: 2px; }
+.text-body { font-size: 15px; line-height: 1.95; color: #303133; letter-spacing: .2px; max-height: 62vh; overflow-y: auto; padding-right: 6px; }
+.text-body p { margin: 0 0 1em; text-indent: 2em; text-align: justify; }
+.text-missing { font-size: 12px; color: #909399; line-height: 1.8; padding: 6px 0 2px; }
 .block-head { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: #606266; margin: 16px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #f0f2f5; }
 .kp-item { padding: 8px 0; border-bottom: 1px dashed #f0f2f5; }
 .kp-title { font-size: 13px; color: #303133; font-weight: 500; display: flex; align-items: center; gap: 8px; }

@@ -1410,8 +1410,10 @@
       "syllabus": {
         "body": {
           "chapter_count": "integer",
-          "chapters": "list<{\"code\": \"string\", \"kp\": \"integer\", \"period\": \"string\", \"q\": \"integer\", \"sections\": \"list<{\\\"code\\\": \\\"string\\\", \\\"kp\\\": \\\"integer\\\", \\\"order\\\": \\\"integer\\\", \\\"q\\\": \\\"integer\\\", \\\"title\\\": \\\"string\\\"}>\", \"title\": \"string\"}>",
+          "chapters": "list<{\"chars\": \"integer\", \"code\": \"string\", \"kp\": \"integer\", \"period\": \"string\", \"q\": \"integer\", \"sections\": \"list<{\\\"chars\\\": \\\"integer\\\", \\\"code\\\": \\\"string\\\", \\\"kp\\\": \\\"integer\\\", \\\"order\\\": \\\"integer\\\", \\\"q\\\": \\\"integer\\\", \\\"title\\\": \\\"string\\\"}>\", \"title\": \"string\"}>",
           "section_count": "integer",
+          "text_nodes": "integer",
+          "total_chars": "integer",
           "total_kp": "integer",
           "total_q": "integer",
           "track": "string",

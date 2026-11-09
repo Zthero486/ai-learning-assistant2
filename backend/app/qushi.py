@@ -144,8 +144,9 @@ def ensure_syllabus(conn) -> int:
 def tree(conn, track: str, uid: int = 0) -> list:
     """返回 [{code, title, period, chapter_no, sections:[...]}]，带该用户的学习量。"""
     rows = conn.execute(
-        "SELECT code, level, parent_code, title, period, order_no FROM syllabus_nodes "
-        "WHERE track=? ORDER BY level, order_no",
+        "SELECT code, level, parent_code, title, period, order_no, "
+        "       length(coalesce(content,'')) AS chars "
+        "FROM syllabus_nodes WHERE track=? ORDER BY level, order_no",
         (track,),
     ).fetchall()
 
@@ -171,6 +172,7 @@ def tree(conn, track: str, uid: int = 0) -> list:
                 "code": r["code"],
                 "title": f"第{chapter_no(r['order_no'])}章 {r['title']}",
                 "period": r["period"],
+                "chars": r["chars"] or 0,
                 "kp": counts.get(r["code"], {}).get("kp", 0),
                 "q": counts.get(r["code"], {}).get("q", 0),
                 "sections": [],
@@ -189,6 +191,7 @@ def tree(conn, track: str, uid: int = 0) -> list:
                 "code": r["code"],
                 "title": r["title"],
                 "order": r["order_no"],
+                "chars": r["chars"] or 0,
                 "kp": c.get("kp", 0),
                 "q": c.get("q", 0),
             }

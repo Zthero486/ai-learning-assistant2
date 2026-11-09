@@ -601,6 +601,10 @@ def get_syllabus(track: str = "", uid: int = Depends(require_user)):
         "section_count": sum(len(c["sections"]) for c in chapters),
         "total_kp": sum(c["kp"] for c in chapters),
         "total_q": sum(c["q"] for c in chapters),
+        "total_chars": sum(c["chars"] for c in chapters)
+        + sum(s["chars"] for c in chapters for s in c["sections"]),
+        "text_nodes": sum(1 for c in chapters if c["chars"])
+        + sum(1 for c in chapters for s in c["sections"] if s["chars"]),
     }
 
 
