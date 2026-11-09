@@ -29,8 +29,8 @@ def party_ctx(client):
 def test_工具数量与权限划分():
     read_only = ai_agent.tool_specs(False)
     full = ai_agent.tool_specs(True)
-    assert len(read_only) == 10
-    assert len(full) == 24
+    assert len(read_only) == 11
+    assert len(full) == 26
     assert all(t["function"]["name"] not in {x["function"]["name"] for x in read_only}
                for t in full if t not in read_only)
     assert all(not t["write"] for t in ai_agent.TOOLS.values() if t["spec"] in read_only)
@@ -83,8 +83,8 @@ def test_出题与任务(party_ctx):
                                {"node_code": code, "title": "出题用要点", "description": "d"},
                                allow_write=True)
     q = ai_agent.execute_tool(ctx, "create_questions", {"kp_id": kp["id"], "questions": [
-        {"type": "单选题", "question": "题干？", "answer": "A"},
-        {"type": "简答", "question": "简述？", "answer": "答案"},
+        {"type": "单选题", "question": "题干？", "answer": "A", "evidence": "原文句一"},
+        {"type": "简答", "question": "简述？", "answer": "答案", "evidence": "原文句二"},
     ]}, allow_write=True)
     assert q["ok"] and q["created"] == 2
 
@@ -126,8 +126,8 @@ def test_未选课时对话接口报错():
 def test_工具清单接口(client):
     client.post("/api/profile/track", json={"track": "party"})
     data = client.get("/api/ai/tools").json()
-    assert len(data["tools"]) == 24
-    assert sum(1 for t in data["tools"] if t["write"]) == 14
+    assert len(data["tools"]) == 26
+    assert sum(1 for t in data["tools"] if t["write"]) == 15
 
 
 def _wrong_id(client) -> int:
@@ -250,6 +250,32 @@ def test_状态机_审查不达标会回流(party_ctx, monkeypatch):
     assert done["reviews"] == 2 and done["tool_calls"] == 1
 
 
+def test_轨迹事件_含思考参数与耗时(party_ctx, monkeypatch):
+    """前端「执行轨迹」要靠这些事件：模型的中间想法、每次调用的参数与耗时。"""
+    ctx, _ = party_ctx
+
+    def fake(convo, tools=None, **kw):
+        if not any(m.get("role") == "tool" for m in convo):
+            return {"content": "先看看你最近的学习数据",
+                    "tool_calls": [{"id": "c1", "type": "function",
+                                    "function": {"name": "get_my_stats", "arguments": "{}"}}]}
+        return {"content": "你目前的情况是……", "tool_calls": []}
+
+    monkeypatch.setattr(ai_agent.ai_helper, "chat_completion", fake)
+    monkeypatch.setattr(ai_agent, "_review_draft", lambda *a: {"done": True, "gap": ""})
+    events = list(ai_agent.run_events(
+        ctx, [{"role": "user", "content": "我最近学得怎么样"}], allow_write=True))
+
+    thinks = [e for e in events if e.get("type") == "thinking"]
+    assert thinks and thinks[0]["round"] == 1 and "学习数据" in thinks[0]["text"]
+    starts = [e for e in events if e.get("type") == "step" and e.get("phase") == "start"]
+    ends = [e for e in events if e.get("type") == "step" and e.get("phase") == "end"]
+    assert starts[0]["tool"] == "get_my_stats" and starts[0]["round"] == 1
+    assert starts[0]["args"] == {}  # 参数原样下发，界面能显示 AI 到底传了什么
+    assert isinstance(ends[0]["ms"], int) and ends[0]["ms"] >= 0
+    assert events[-1]["elapsed_ms"] >= 0
+
+
 def test_状态机_回流有上限(party_ctx, monkeypatch):
     """质检员一直不达标也不能死循环：到 MAX_REVIEWS 就收尾。"""
     ctx, _ = party_ctx
@@ -283,6 +309,83 @@ def test_状态机_纯问答跳过审查(party_ctx, monkeypatch):
     assert events[-1]["type"] == "done" and "1935" in events[-1]["reply"]
 
 
+# ---------------- 防审查死循环（2026-11-09 真机 HTTP 451 事故） ----------------
+
+def test_状态机_重复调用被短路(party_ctx, monkeypatch):
+    """同样的工具+参数刚成功过就该短路提示，别再把大结果原文灌一遍上下文。"""
+    ctx, _ = party_ctx
+    fake, calls = _scripted_chat([("tools", "get_my_stats"),
+                                  ("tools", "get_my_stats"),
+                                  ("text", "已看完你的学习数据。")])
+    monkeypatch.setattr(ai_agent.ai_helper, "chat_completion", fake)
+    monkeypatch.setattr(ai_agent, "_review_draft",
+                        lambda *a: {"done": True, "gap": ""})
+
+    events = list(ai_agent.run_events(ctx, [{"role": "user", "content": "看看我的情况"}]))
+
+    done = events[-1]
+    assert done["type"] == "done" and done["tool_calls"] == 1  # 第二次没真正执行
+    # 第二次的 tool 回灌是短路提示，不是完整结果
+    tool_msgs = [m for m in calls[2] if m.get("role") == "tool"]
+    assert len(tool_msgs) == 2
+    assert "不要原样重复调用" in tool_msgs[1]["content"]
+    # 界面摘要要能说明是被拦下的重复调用
+    dup_steps = [e for e in events if e.get("type") == "step" and e.get("phase") == "end"]
+    assert "重复调用" in dup_steps[-1]["summary"]
+
+
+def test_状态机_审查拦截摘原文重试(party_ctx, monkeypatch):
+    """HTTP 451 censorship：带大段工具原文被拦时，摘掉原文救一次而不是直接报错。"""
+    ctx, _ = party_ctx
+    calls = []
+
+    def fake(convo, tools=None, **kw):
+        calls.append([dict(m) for m in convo])
+        if len(calls) == 1:
+            return {"content": "", "tool_calls": [{
+                "id": "call_1", "type": "function",
+                "function": {"name": "list_knowledge_points", "arguments": "{}"},
+            }]}
+        if len(calls) == 2:
+            raise RuntimeError('HTTP 451 {"error": {"type": "censorship_blocked"}}')
+        return {"content": "好的，基于前面查到的知识点给你结论。", "tool_calls": []}
+
+    monkeypatch.setattr(ai_agent.ai_helper, "chat_completion", fake)
+    monkeypatch.setattr(ai_agent, "_review_draft", lambda *a: {"done": True, "gap": ""})
+
+    events = list(ai_agent.run_events(ctx, [{"role": "user", "content": "把知识点过一遍"}]))
+
+    # 不出 error 事件，救回来正常收尾
+    assert not [e for e in events if e["type"] == "error"]
+    assert events[-1]["type"] == "done" and events[-1]["reply"]
+    # 第三次调用时 tool 原文已被摘掉
+    tool_msgs = [m for m in calls[2] if m.get("role") == "tool"]
+    assert tool_msgs and "因平台内容审查被省略" in tool_msgs[0]["content"]
+
+
+def test_审查拦截直接报错是人话(party_ctx, monkeypatch):
+    """没有工具原文可摘时（纯问答被拦），报错要能看懂而不是甩一串 HTTP 451。"""
+    ctx, _ = party_ctx
+
+    def fake(convo, tools=None, **kw):
+        raise RuntimeError('HTTP 451 {"error": {"type": "censorship_blocked"}}')
+
+    monkeypatch.setattr(ai_agent.ai_helper, "chat_completion", fake)
+
+    events = list(ai_agent.run_events(ctx, [{"role": "user", "content": "随便聊聊"}]))
+
+    errs = [e for e in events if e["type"] == "error"]
+    assert errs and "安全审查" in errs[0]["message"] and "451" not in errs[0]["message"]
+
+
+def test_list知识点_上限30(party_ctx):
+    """limit 传 60 也最多给 30 条：大结果反复回灌是审查拦截的根源。"""
+    ctx, _ = party_ctx
+    r = ai_agent.execute_tool(ctx, "list_knowledge_points", {"limit": 60}, allow_write=False)
+    assert "error" not in r
+    assert len(r["items"]) <= 30
+
+
 # ---------------- 删除类工具（2026-11-09 开放） ----------------
 
 def test_删除任务(party_ctx):
@@ -312,7 +415,7 @@ def test_删除题目级联清错题(party_ctx):
     qs = ai_agent.execute_tool(ctx, "create_questions",
                                {"kp_id": kp["id"],
                                 "questions": [{"type": "简答", "question": "级联测试题？",
-                                               "answer": "答案"}]}, allow_write=True)
+                                               "answer": "答案", "evidence": "原文依据"}]}, allow_write=True)
     qid = qs["ids"][0]
     # 制造错题记录
     ctx_conn = ctx.conn()
@@ -336,7 +439,7 @@ def test_清空错题本(party_ctx):
     qs = ai_agent.execute_tool(ctx, "create_questions",
                                {"kp_id": kp["id"],
                                 "questions": [{"type": "简答", "question": "清空测试题？",
-                                               "answer": "答案"}]}, allow_write=True)
+                                               "answer": "答案", "evidence": "原文依据"}]}, allow_write=True)
     conn = ctx.conn()
     conn.execute(
         "INSERT INTO wrong_book(user_id,question_id,wrong_count,resolved,uuid,last_wrong_at)"

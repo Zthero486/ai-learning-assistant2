@@ -21,7 +21,7 @@
       </div>
     </header>
 
-    <div ref="scrollEl" class="chat-body">
+    <div ref="scrollEl" class="chat-body" @click="onBodyClick">
       <div v-if="!msgs.length" class="welcome">
         <div class="welcome-title">让 AI 把这一门课陪你学完</div>
         <p class="welcome-sub">
@@ -36,7 +36,12 @@
       <div v-for="(m, i) in msgs" :key="i" :class="['row', m.role]">
         <div class="avatar">{{ m.role === 'user' ? '我' : 'AI' }}</div>
         <div class="bubble-col">
-          <div v-if="m.steps && m.steps.length" class="steps">
+          <AiTrace
+            v-if="m.trace && m.trace.length"
+            :trace="m.trace" :pending="!!m.pending"
+            :elapsed-ms="m.elapsedMs || 0" :start-at="m.startAt || 0"
+          />
+          <div v-else-if="m.steps && m.steps.length" class="steps">
             <div v-for="(s, j) in m.steps" :key="j" class="step" :class="{ fail: s.ok === false, write: s.write }">
               <span class="step-name">{{ toolLabel(s.tool) }}</span>
               <span class="step-sum">{{ s.summary || '执行中…' }}</span>
@@ -154,6 +159,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Microphone } from '@element-plus/icons-vue'
 import { useVoiceInput } from '../composables/voice'
 import { useAiConversation, toolLabel } from '../composables/useAiConversation'
+import AiTrace from '../components/AiTrace.vue'
 import api, { auth } from '../api'
 
 const route = useRoute()
@@ -267,17 +273,107 @@ function inline(s) {
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
 }
+
+const TAG_SPLIT = /\s*[·・]\s*|\s*[、，]\s*/
+
+function tagsHtml(rest) {
+  const tags = rest.split(TAG_SPLIT).map((t) => t.trim()).filter(Boolean).slice(0, 6)
+  return `<div class="md-tags">${tags.map((t) => `<span class="md-tag">${t}</span>`).join('')}</div>`
+}
+
+function sourceHtml(rest) {
+  const m = rest.match(/([a-z]+-\d+(?:-\d+)*)/i)
+  const node = m ? m[1].toLowerCase() : ''
+  // 节 code 只进 data-node 供跳转，显示层去掉，别让学生看到 socialism-01-04 这种内部记号
+  const shown = rest
+    .replace(/[（(]?\s*[a-z]+-\d+(?:-\d+)*\s*[)）]?/gi, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[\s·,，、|｜：:—-]+|[\s·,，、|｜：:—-]+$/g, '')
+    .trim()
+  return `<div class="md-source"${node ? ` data-node="${node}"` : ''}>`
+    + `<span class="md-source-text">${shown || '教材原文'}</span>`
+    + `<span class="md-source-arrow">›</span></div>`
+}
+
 function renderMd(text) {
   if (!text) return ''
   const lines = escapeHtml(text).split('\n')
   const out = []
   let list = null
+  let quote = null
+  let quotePlain = '' // 引用原文纯文本（给教材定位用）
+  let pendingNode = '' // 「出处：…（code）」行解析出的节 code，回填给紧随的原文卡
+  let lastQuoteIdx = -1 // 最近一张原文卡在 out 里的下标（来源条解析后回填节 code）
+  const hlAttr = () => quotePlain.replace(/"/g, '').trim().slice(0, 80)
   const closeList = () => {
     if (list) { out.push(`</${list}>`); list = null }
+  }
+  const closeQuote = () => {
+    if (quote) {
+      lastQuoteIdx = out.length
+      let card =
+        `<div class="md-quote collapsed"><div class="md-quote-head">原文节选</div>`
+        + `<div class="md-quote-body">${quote.join('')}</div>`
+        + `<span class="md-quote-toggle">查看全文</span></div>`
+      // 出处行已给出节 code（来源条在卡片后出现时再覆盖）——点卡片直接跳教材定位
+      if (pendingNode) {
+        card = card.replace(
+          'class="md-quote collapsed"',
+          `class="md-quote collapsed" data-node="${pendingNode}" data-hl="${hlAttr()}"`,
+        )
+        pendingNode = ''
+      }
+      out.push(card)
+      quote = null
+    }
   }
   for (const raw of lines) {
     const line = raw.trimEnd()
     if (!line.trim()) { closeList(); continue }
+    // 引用块（词条卡的「原文节选」）
+    const qt = line.match(/^\s*&gt;\s?(.*)$/)
+    if (qt) {
+      closeList()
+      quote = quote || []
+      quote.push(`<p>${inline(qt[1])}</p>`)
+      quotePlain += qt[1].replace(/&[a-z]+;/g, ' ').replace(/\*\*|__|`/g, '')
+      continue
+    }
+    closeQuote()
+    // 出处行：词条卡的来源说明（可能在原文卡前面），摘出节 code 供卡片跳转；
+    // 顺手隐去（material_id:…）这类对用户无意义的记号
+    const ch = line.match(/^\**\s*出处\s*\**\s*[:：]\s*(.*)$/)
+    if (ch) {
+      const nm = ch[1].match(/([a-z]+-\d+(?:-\d+)*)/i)
+      pendingNode = nm ? nm[1].toLowerCase() : ''
+      const shown = ch[1]
+        .replace(/[（(]\s*material_id\s*[:：]\s*\d+\s*[)）]/i, '')
+        .replace(/[（(]?\s*[a-z]+-\d+(?:-\d+)*\s*[)）]?/gi, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim()
+      out.push(`<p><span class="md-src-line">${inline(shown)}</span></p>`)
+      continue
+    }
+    // 要点标签行
+    const tags = line.match(/^【要点】\s*(.+)$/)
+    if (tags) { closeList(); out.push(tagsHtml(tags[1])); continue }
+    // 来源条
+    const src = line.match(/^(?:——|--)\s*来源[:：]\s*(.+)$/) || line.match(/^来源[:：]\s*(.+)$/)
+    if (src) {
+      closeList()
+      out.push(sourceHtml(src[1]))
+      // 把节 code 回填到紧邻的原文卡：点原文也能跳到教材定位（出处行已回填则不覆盖）
+      const nm = src[1].match(/([a-z]+-\d+(?:-\d+)*)/i)
+      if (nm && lastQuoteIdx >= 0 && out[lastQuoteIdx] && !out[lastQuoteIdx].includes('data-node=')) {
+        const hl = quotePlain.replace(/"/g, '').trim().slice(0, 80)
+        out[lastQuoteIdx] = out[lastQuoteIdx].replace(
+          'class="md-quote collapsed"',
+          `class="md-quote collapsed" data-node="${nm[1].toLowerCase()}" data-hl="${hl}"`,
+        )
+      }
+      quotePlain = ''
+      continue
+    }
     const h = line.match(/^(#{1,4})\s+(.*)$/)
     if (h) { closeList(); out.push(`<div class="md-h${h[1].length}">${inline(h[2])}</div>`); continue }
     const ul = line.match(/^\s*[-*•]\s+(.*)$/)
@@ -295,8 +391,37 @@ function renderMd(text) {
     closeList()
     out.push(`<p>${inline(line)}</p>`)
   }
+  closeQuote()
   closeList()
   return out.join('')
+}
+
+// 词条卡交互（v-html 内容用事件委托）：展开/收起原文，点击原文卡/来源条跳到教材定位
+function onBodyClick(e) {
+  const toggle = e.target.closest('.md-quote-toggle')
+  if (toggle) {
+    const box = toggle.closest('.md-quote')
+    if (box) {
+      box.classList.toggle('collapsed')
+      toggle.textContent = box.classList.contains('collapsed') ? '查看全文' : '收起'
+    }
+    return
+  }
+  if (!uiLink.value) return
+  // 原文节选卡（带节 code 时）：跳教材并定位这段原文
+  const qb = e.target.closest('.md-quote[data-node]')
+  if (qb) {
+    const query = { node: qb.dataset.node }
+    if (qb.dataset.hl) query.hl = qb.dataset.hl
+    router.push({ path: '/syllabus', query })
+    emit('navigated', `/syllabus?node=${query.node}${query.hl ? `&hl=${encodeURIComponent(query.hl)}` : ''}`)
+    return
+  }
+  const src = e.target.closest('.md-source[data-node]')
+  if (src) {
+    router.push({ path: '/syllabus', query: { node: src.dataset.node } })
+    emit('navigated', `/syllabus?node=${src.dataset.node}`)
+  }
 }
 
 function scrollToBottom() {
@@ -476,6 +601,60 @@ onMounted(async () => {
 .bubble :deep(.md-h1) { font-size: 16px; }
 .bubble :deep(.md-h2) { font-size: 15px; }
 .bubble :deep(.md-h3), .bubble :deep(.md-h4) { font-size: 14px; }
+
+/* ---- 词条卡：原文节选（引用折叠卡）---- */
+.bubble :deep(.md-quote) {
+  margin: 8px 0 10px;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  background: #f8f9fb;
+  overflow: hidden;
+}
+.bubble :deep(.md-quote[data-node]) { cursor: pointer; }
+.bubble :deep(.md-quote[data-node]):hover { border-color: #c6e2ff; background: #f0f6ff; }
+.bubble :deep(.md-quote-head) {
+  font-size: 11.5px; font-weight: 600; color: #909399;
+  padding: 6px 12px 0; letter-spacing: 1px;
+}
+.bubble :deep(.md-quote-body) { padding: 4px 12px 6px; }
+.bubble :deep(.md-quote-body p) {
+  margin: 4px 0; text-indent: 2em; color: #4a4f58; font-size: 13px;
+  border-left: none; padding-left: 0;
+}
+.bubble :deep(.md-quote.collapsed .md-quote-body) {
+  max-height: 5.6em; overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent);
+  mask-image: linear-gradient(180deg, #000 70%, transparent);
+}
+.bubble :deep(.md-quote-toggle) {
+  display: block; text-align: center; font-size: 12px; color: #409eff;
+  cursor: pointer; padding: 5px 0 7px; user-select: none;
+}
+.bubble :deep(.md-quote-toggle:hover) { color: #66b1ff; }
+
+/* ---- 词条卡：出处行（原文卡上方的小字说明）---- */
+.bubble :deep(.md-src-line) {
+  display: inline-block; font-size: 12.5px; color: #8a919e;
+  margin: 2px 0 6px;
+}
+
+/* ---- 词条卡：要点标签 ---- */
+.bubble :deep(.md-tags) { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.bubble :deep(.md-tag) {
+  font-size: 12px; color: #5a6472; background: #f1f3f6;
+  border: 1px solid #e4e8ee; border-radius: 999px; padding: 2px 10px;
+}
+
+/* ---- 词条卡：来源条（仿「课文来自《…》」横条，可点跳章节）---- */
+.bubble :deep(.md-source) {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin: 10px 0 2px; padding: 9px 14px;
+  background: #fff; border: 1px solid #ebeef5; border-radius: 8px;
+  font-size: 12.5px; color: #606266; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+.bubble :deep(.md-source[data-node]) { cursor: pointer; }
+.bubble :deep(.md-source[data-node]:hover) { border-color: #c6e2ff; color: #409eff; }
+.bubble :deep(.md-source-arrow) { color: #c0c4cc; font-size: 16px; line-height: 1; }
 
 .steps { display: flex; flex-direction: column; gap: 4px; }
 .step {

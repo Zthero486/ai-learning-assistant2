@@ -17,25 +17,29 @@
 """
 
 import json
+import os
 import re
 import sqlite3
+import time
+import unicodedata
 import uuid
 from datetime import datetime, timedelta
 from typing import Callable
 
 from . import ai_helper, qushi
 
-MAX_ROUNDS = 8          # 一次对话最多几轮「模型→工具→模型」（学整章这类长任务 6 轮不够）
-MAX_TOOL_CALLS = 20     # 一次对话最多执行多少次工具
-MAX_REVIEWS = 2         # 质量审查不达标最多回流几次，防审查-回流死循环
+MAX_ROUNDS = int(os.getenv("AI_MAX_ROUNDS", "40"))        # 一轮对话最多几轮「模型→工具→模型」
+MAX_TOOL_CALLS = int(os.getenv("AI_MAX_TOOL_CALLS", "150"))  # 一轮对话最多执行多少次工具
+MAX_REVIEWS = int(os.getenv("AI_MAX_REVIEWS", "3"))         # 质量审查不达标最多回流几次，防审查-回流死循环
+MAX_WALL_SECONDS = int(os.getenv("AI_MAX_WALL_SECONDS", "900"))  # 单次对话总时长软上限（秒），防失控空转
 MAX_TOOL_RESULT = 3000  # 单个工具结果回灌给模型的字符上限
 MAX_MATERIAL_CHARS = 20000   # AI 生成资料入库的字数上限
 MAX_QUESTIONS_PER_CALL = 10
 
 # 出题工具的参数错误提示：必须带可照抄的示例，模型才能下一轮自己改对
 _QUESTIONS_HINT = ('questions 必须是 JSON 数组（不是字符串），每项形如'
-                   ' {"type":"单选题","question":"题干","answer":"参考答案"}，'
-                   'type 和 answer 可省略')
+                   ' {"type":"单选题","question":"题干","answer":"参考答案","evidence":"教材原文原句"}，'
+                   'type 和 answer 可省略，evidence 必填（没有原文依据的题不会入库）')
 
 # navigate 工具可去的页面（前端路由白名单）
 UI_ROUTES = {
@@ -48,22 +52,25 @@ UI_ROUTES = {
     "/practice": "自测",
     "/wrong-book": "错题本",
 }
+# 节 code 形如 socialist-01-02 / party-03
+_NODE_CODE_RE = re.compile(r"^[a-z]+-\d{1,2}(?:-\d{1,2})*$")
 
 # 单次对话各写入工具的批数上限（防"全流程狂写"烧光调用预算）
 WRITE_BUDGETS = {
-    "create_knowledge_point": 6,
-    "create_questions": 4,
-    "create_task": 5,
-    "create_material": 2,
-    "create_event": 2,
-    "save_memory": 3,
+    "create_knowledge_point": 24,
+    "create_questions": 16,
+    "create_task": 20,
+    "create_material": 6,
+    "create_event": 6,
+    "save_memory": 8,
+    "highlight_text": 40,
     # 删除类：单条删除给足批量清理的余量；清空错题本一次搞定
-    "delete_task": 12,
-    "delete_knowledge_point": 12,
-    "delete_material": 6,
-    "delete_event": 6,
-    "delete_question": 15,
-    "delete_memory": 5,
+    "delete_task": 40,
+    "delete_knowledge_point": 40,
+    "delete_material": 20,
+    "delete_event": 20,
+    "delete_question": 50,
+    "delete_memory": 20,
     "clear_wrong_book": 1,
 }
 
@@ -279,7 +286,7 @@ def _tool_read_material(ctx: AgentContext, args: dict) -> dict:
 def _tool_list_knowledge_points(ctx: AgentContext, args: dict) -> dict:
     node_code = (args.get("node_code") or "").strip()
     keyword = (args.get("keyword") or "").strip()
-    limit = min(_as_int(args.get("limit"), 30) or 30, 60)
+    limit = min(_as_int(args.get("limit"), 30) or 30, 30)  # 上限 30：大结果反复回灌会触发平台内容审查
     sql = ("SELECT id,title,node_code,exam_type,description FROM knowledge_points WHERE user_id=?")
     params = [ctx.uid]
     if node_code:
@@ -312,7 +319,7 @@ def _tool_list_knowledge_points(ctx: AgentContext, args: dict) -> dict:
 def _tool_list_events(ctx: AgentContext, args: dict) -> dict:
     keyword = (args.get("keyword") or "").strip()
     y1, y2 = _as_int(args.get("year_from")), _as_int(args.get("year_to"))
-    limit = min(_as_int(args.get("limit"), 30) or 30, 60)
+    limit = min(_as_int(args.get("limit"), 30) or 30, 30)
     sql = "SELECT id,title,year,year_label,node_code,kind FROM events WHERE user_id=?"
     params = [ctx.uid]
     if keyword:
@@ -485,6 +492,133 @@ def _tool_create_material(ctx: AgentContext, args: dict) -> dict:
             "message": f"已把《{title}》（{len(content)} 字）存入史料笔记"}
 
 
+def _tool_get_node_text(ctx: AgentContext, args: dict) -> dict:
+    """读教材正文（syllabus_nodes.content），可分页。出题前必须用它拿原文依据。"""
+    node_code = (args.get("node_code") or "").strip()
+    if not node_code:
+        return {"ok": False, "error": "node_code 必填（来自 find_node / list_syllabus）"}
+    offset = max(_as_int(args.get("offset"), 0) or 0, 0)
+    length = min(_as_int(args.get("length"), 2500) or 2500, 6000)
+    conn = ctx.conn()
+    try:
+        row = conn.execute(
+            "SELECT code,title,content FROM syllabus_nodes WHERE code=?", (node_code,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return {"ok": False, "error": f"章节 {node_code} 不存在"}
+    content = row["content"] or ""
+    if not content.strip():
+        return {"ok": False,
+                "error": f"「{row['title']}」这一节暂无教材正文，给不出原文依据，"
+                         "请换有正文的节出题，不要凭模型记忆编题"}
+    text = content[offset:offset + length]
+    return {"ok": True, "node_code": node_code, "title": row["title"],
+            "text": text, "total_chars": len(content),
+            "hint": "出题时每题的 evidence 必须从这里摘原句；写不出依据就不要给该知识点出题。"}
+
+
+def _locate_quote(content: str, quote: str):
+    """在正文里定位摘录句，返回 (offset, length)；找不到返回 None。
+
+    两级容错：先去空白逐字匹配；不行再去掉标点/符号后匹配（模型摘录时
+    经常把全角标点写成半角、或多/少一个引号）。用索引映射还原原文位置。
+    """
+    def _norm_indices(text, drop_punct):
+        idxs, norm = [], []
+        for i, ch in enumerate(text):
+            if ch.isspace():
+                continue
+            if drop_punct:
+                cat = unicodedata.category(ch)
+                if cat.startswith("P") or cat.startswith("S"):
+                    continue
+            idxs.append(i)
+            norm.append(ch)
+        return idxs, "".join(norm)
+
+    q = "".join(quote.split())
+    if not (2 <= len(q) <= 200):
+        return None
+    for drop in (False, True):
+        idxs, norm = _norm_indices(content, drop)
+        _, qn = _norm_indices(quote, drop)
+        if not qn:
+            continue
+        at = norm.find(qn)
+        if at < 0:
+            # 退化：模型常在句子中段改字/漏字（OCR 差异如「进人/进入」），
+            # 取「最长能定位的前缀」；下界固定 12 字，短于此的不算有效依据
+            lo = 12
+            for cut in range(len(qn) - 1, lo - 1, -1):
+                at = norm.find(qn[:cut])
+                if at >= 0:
+                    qn = qn[:cut]
+                    break
+            else:
+                at = -1
+        if at >= 0:
+            offset = idxs[at]
+            end = idxs[min(at + len(qn) - 1, len(idxs) - 1)] + 1
+            if end - offset >= 2:
+                return offset, end - offset
+    return None
+
+
+def _tool_highlight_text(ctx: AgentContext, args: dict) -> dict:
+    """AI 划重点：把教材正文里的关键句高亮为 AI 专属紫色（text_notes, color=purple）。"""
+    node_code = (args.get("node_code") or "").strip()
+    quote = (args.get("quote") or "").strip()
+    note = (args.get("note") or "").strip()
+    if not node_code or not quote:
+        return {"ok": False, "error": "node_code 和 quote 必填（quote 从 get_node_text 的正文里逐字摘录）"}
+    if node_code != ctx.track and not ctx.node_ok(node_code):
+        return {"ok": False, "error": f"章节 {node_code} 不属于当前课程，请先用 find_node 查正确的节 code"}
+    q = "".join(quote.split())  # 忽略空白差异定位（与前端 locateQuote 同思路）
+    if not (2 <= len(q) <= 200):
+        return {"ok": False, "error": "quote 需 2~200 字，太长请只截取关键句"}
+    conn = ctx.conn()
+    try:
+        row = conn.execute(
+            "SELECT title,content FROM syllabus_nodes WHERE code=?", (node_code,)
+        ).fetchone()
+        if not row:
+            return {"ok": False, "error": f"章节 {node_code} 不存在"}
+        content = row["content"] or ""
+        if not content.strip():
+            return {"ok": False, "error": f"「{row['title']}」暂无教材正文，没有可划的重点"}
+        hit = _locate_quote(content, quote)
+        if hit is None:
+            return {"ok": False,
+                    "error": "quote 没能在本节正文里逐字找到——必须原句摘录（不要改写、不要翻译），"
+                             "直接从 get_node_text 返回的正文复制（可只截前 16 字以上），不要自己加引号或改标点"}
+        offset, length = hit
+        now = ctx.now()
+        dup = conn.execute(
+            "SELECT id FROM text_notes WHERE user_id=? AND node_code=? AND offset=? AND length=?",
+            (ctx.uid, node_code, offset, length),
+        ).fetchone()
+        if dup:
+            conn.execute("UPDATE text_notes SET note=?, color='purple', updated_at=? WHERE id=?",
+                         (note[:2000], now, dup["id"]))
+            nid, action = dup["id"], "updated"
+        else:
+            cur = conn.execute(
+                "INSERT INTO text_notes(user_id,uuid,node_code,offset,length,quote,note,color,"
+                "created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (ctx.uid, uuid.uuid4().hex, node_code, offset, length, quote[:600],
+                 note[:2000], "purple", now, now),
+            )
+            nid, action = cur.lastrowid, "created"
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True, "note_id": nid, "action": action, "node_code": node_code,
+            "offset": offset, "length": length,
+            "message": f"已在教材「{row['title']}」里划出重点（AI 专属紫色），学生打开这一节即可看到"}
+
+
 def _tool_create_questions(ctx: AgentContext, args: dict) -> dict:
     kp_id = _as_int(args.get("kp_id"))
     if not kp_id:
@@ -519,18 +653,26 @@ def _tool_create_questions(ctx: AgentContext, args: dict) -> dict:
             if not question:
                 skipped.append(f"第{i + 1}项缺 question")
                 continue
+            # 原文依据硬约束：模型给不出教材原句的题不落库（2026-11-09 用户要求）
+            evidence = str(q.get("evidence") or "").strip()
+            if not evidence:
+                skipped.append(f"第{i + 1}项缺 evidence（教材原文依据）")
+                continue
             cur = conn.execute(
-                "INSERT INTO questions(user_id,uuid,kp_id,type,question,answer,source,created_at)"
-                " VALUES(?,?,?,?,?,?,?,?)",
+                "INSERT INTO questions(user_id,uuid,kp_id,type,question,answer,evidence,source,created_at)"
+                " VALUES(?,?,?,?,?,?,?,?,?)",
                 (ctx.uid, uuid.uuid4().hex, kp_id, str(q.get("type") or "简答"),
-                 question, str(q.get("answer") or "").strip(), "ai", ctx.now()),
+                 question, str(q.get("answer") or "").strip(), evidence[:200], "ai", ctx.now()),
             )
             ids.append(cur.lastrowid)
         conn.commit()
     finally:
         conn.close()
-    if not ids:
-        return {"ok": False, "error": "没有解析出任何题目（" + "；".join(skipped[:3]) + "）。" + _QUESTIONS_HINT}
+        if not ids:
+            return {"ok": False,
+                    "error": f"没有解析出可入库的题（{'；'.join(skipped[:3])}）。"
+                             "每题必须带 evidence（教材原文原句摘录），请先调 get_node_text 拿原文再出题。"
+                             + _QUESTIONS_HINT}
     msg = f"已为「{kp['title']}」新增 {len(ids)} 道题"
     if skipped:
         msg += f"，另有 {len(skipped)} 条格式不对被跳过"
@@ -597,13 +739,26 @@ def _tool_navigate(ctx: AgentContext, args: dict) -> dict:
 
     后端只做白名单校验并把意图随事件流发回去，真正跳转由前端执行 ——
     学生说「切到史料笔记」，界面就直接切过去，不用再手动点侧栏。
+    去教材页时还能带 node（节 code）+ quote（原文片段）：
+    界面会翻到那一节并把这段原文临时标出来。
     """
     route = (args.get("route") or "").strip()
     if route not in UI_ROUTES:
         return {"ok": False, "error": f"route 必须是 {list(UI_ROUTES)} 之一"}
+    ui = {"action": "navigate", "route": route}
+    msg = f"已切换到「{UI_ROUTES[route]}」"
+    node = (args.get("node") or "").strip().lower()
+    if route == "/syllabus" and node:
+        if not _NODE_CODE_RE.match(node):
+            return {"ok": False, "error": "node 必须是真实节 code，例如 socialism-01-01"}
+        query = {"node": node}
+        quote = (args.get("quote") or "").strip()
+        if quote:
+            query["hl"] = quote[:80]
+        ui["query"] = query
+        msg = f"已翻到 {node} 并把这段原文标出来了" if quote else f"已翻到 {node}"
     return {"ok": True, "route": route, "label": UI_ROUTES[route],
-            "ui": {"action": "navigate", "route": route},
-            "message": f"已切换到「{UI_ROUTES[route]}」"}
+            "ui": ui, "message": msg}
 
 
 def _tool_tag_wrong_error(ctx: AgentContext, args: dict) -> dict:
@@ -865,6 +1020,27 @@ TOOLS = {
                "length": _I("读多少字，默认 2500，最多 6000")}, ["material_id"]),
         fn=_tool_read_material,
     ),
+    "get_node_text": dict(
+        _spec("get_node_text",
+              "读教材正文（按节 code，可分页）。出题前必须先调它拿原文依据；"
+              "回答知识点问题时也可以引用它作为权威原文。",
+              {"node_code": _S("节 code，如 party-03-02"),
+               "offset": _I("从第几个字开始，默认 0"),
+               "length": _I("读多少字，默认 2500，最多 6000")}, ["node_code"]),
+        fn=_tool_get_node_text,
+    ),
+    "highlight_text": dict(
+    _spec("highlight_text",
+          "在教材正文里划重点：把一段关键句高亮成 AI 专属紫色，学生打开该节正文立即可见。"
+          "学生说「帮我画重点/标出重点/把重点标到教材上」时用——这是唯一能往教材上做标记的工具，"
+          "把重点整理成史料笔记/资料**不能代替**它。quote 必须从 get_node_text 返回的正文里逐字摘录（不能改写），"
+          "可附一句 note 批注说明为什么关键。",
+              {"node_code": _S("节 code，如 party-03-02"),
+               "quote": _S("要高亮的原文原句（2~200 字，逐字摘录）"),
+               "note": _S("可选：一句批注，说明这句为什么重要")},
+              ["node_code", "quote"], write=True),
+        fn=_tool_highlight_text,
+    ),
     "list_knowledge_points": dict(
         _spec("list_knowledge_points", "列出本人已有的知识点（可按节 code 或关键词过滤），返回 id 供出题使用。",
               {"node_code": _S("可选：节 code 前缀，如 party-03-02"),
@@ -879,8 +1055,11 @@ TOOLS = {
     ),
     "navigate": dict(
         _spec("navigate",
-              "直接切换软件页面（学生说「切到/打开/带我去 XX」时调用，界面会真的跳过去）。",
-              {"route": _S("页面路径：" + "，".join(f"{k}={v}" for k, v in UI_ROUTES.items()))},
+              "直接切换软件页面（学生说「切到/打开/带我去 XX」时调用，界面会真的跳过去）。"
+              "去教材页可带 node + quote：会翻到那一节并把这段原文临时标出来。",
+              {"route": _S("页面路径：" + "，".join(f"{k}={v}" for k, v in UI_ROUTES.items())),
+               "node": _S("可选：节 code（如 socialism-01-01），仅 /syllabus 有效"),
+               "quote": _S("可选：要在教材里标出的原文片段（≤80 字，逐字摘自正文）")},
               ["route"]),
         fn=_tool_navigate,
     ),
@@ -926,19 +1105,21 @@ TOOLS = {
     "create_questions": dict(
         _spec("create_questions",
               "给某个知识点批量新建练习题。questions 必须是 JSON 数组（不是字符串），"
-              "每项都要有 question 和 answer；题型用「单选题/名词解释/时间排序/简答/材料分析/论述」。",
+              "每项都要有 question、answer 和 evidence（教材原文依据，摘自 get_node_text 的正文原句）；"
+              "没有 evidence 的题不会入库。题型用「单选题/名词解释/时间排序/简答/材料分析/论述」。",
               {"kp_id": _I("知识点 id（来自 list_knowledge_points）"),
                "questions": {
                    "type": "array",
-                   "description": '题目数组，最多 10 项，每项如 {"type":"单选题","question":"…","answer":"…"}',
+                   "description": '题目数组，最多 10 项，每项如 {"type":"单选题","question":"…","answer":"…","evidence":"…"}',
                    "items": {
                        "type": "object",
                        "properties": {
                            "type": _S("题型，缺省为简答"),
                            "question": _S("题干"),
                            "answer": _S("参考答案"),
+                           "evidence": _S("教材原文依据（从 get_node_text 的正文里摘原句，≤80 字）"),
                        },
-                       "required": ["question", "answer"],
+                       "required": ["question", "answer", "evidence"],
                    },
                }},
               ["kp_id", "questions"], write=True),
@@ -1088,6 +1269,19 @@ def system_prompt(ctx: AgentContext) -> str:
 13. 收到「【质量审查】」提示时，说明你上一稿被判没达标：只针对缺口补齐（可以再用工具），不要推翻已完成的有效工作，补完重新总结收尾。
 14. 对话中出现值得长期记住的学生信息（考试时间、专业背景、反复暴露的薄弱块、明确偏好），顺手调 save_memory 沉淀；已有的信息不要重复存。
 15. **删除守则**：删除不可恢复。单条删除（delete_*）前必须先用只读工具确认那条数据存在、确实是要删的那条，绝不凭记忆猜 id；删完后在答复里逐条列出删了什么。批量清理优先用一键工具（clear_wrong_book），不要一条一条删；学生说「全部删掉/清空」时，答复里先报告将删的数量再执行，结果如实汇报条数。
+16. **词条卡**：学生问「讲讲 X / X 是什么 / 介绍 X / X 的中心思想」这类**单个知识点/事件/史料**的问题，且你查到了原文时，严格按下面的词条格式回答（前端会渲染成卡片；各部分的方括号、记号必须原样保留）：
+# 标题
+出处：{ctx.track}-01-01 第一章 空想社会主义的产生和发展
+> 这里照录教材正文原文（可多段，整段照录不改写）
+【要点】短标签一 · 短标签二 · 短标签三（3-5 个，每个 2-6 字）
+**中心思想**：两三句概括它的核心内容与意义
+—— 来源：《{ctx.track_name}》{ctx.track}-01-01 第一章 空想社会主义的产生和发展
+（出处行和来源行都按上面两行的样子写：**节 code 在最前面**，后面跟章名/节名，不要写别的说明）
+**硬性要求**：原文节选必须**逐字复制自 get_node_text 返回的教材正文**（或该节史料原文），出处行与来源行都必须写**真实节 code**——学生点卡片会直接跳到教材那一节并标出这段原文，code 错了或写了材料 id 就跳不了；引用的内容没有对应的教材节时不要套词条卡格式，正常分点回答。学生说「带我去原文/让我看看书上怎么写的」时，直接调 navigate(route="/syllabus", node=节 code, quote=原文片段)，界面会当场翻到那一节并标出来。
+问题不是单个知识点、或没查到原文时不必套用，正常分点回答即可。
+19. **模糊/情绪型请求先给结论**：学生只表达焦虑或没有明确任务（「下周就考试了很慌怎么办」「我该怎么复习」），先 get_my_stats 看一眼进度，直接给 3 步以内的具体做法收尾，最多建 2-3 条任务；**不要**借此一口气灌知识点、批量出题——他真要整理/出题会说清楚的。
+17. **出题必须有原文依据**：调 create_questions 前必须先 get_node_text 读该知识点的节正文；每道题的 evidence 字段填教材正文里的**原句摘录**（≤80 字）；写不出依据的知识点不要给它出题，这一节没有教材正文就直接告诉学生出不了并说明原因，绝不凭模型记忆编题。
+18. **划重点**：学生请你「画重点/标重点/把重点标到教材上」时，先 get_node_text 读正文，再调 highlight_text 把真正关键的句子划成紫色——每节挑 2~5 处、每处 2~200 字，note 用一句话写清为什么关键；quote **直接从 get_node_text 返回的正文复制**（逐字，不要自己加引号/改标点/缩写；只截取前 16 字以上也能定位）。**绝不要用 create_material 把重点摘编存成资料来代替划重点**——那不是学生要的。答复里说明划了哪几处、各为什么关键。
 
 内容要求：
 - 口径必须符合权威简史（《百年奋斗重大成就和历史经验的决议》、四本官方简史、二十大报告），重大年份、会议、文件名称不得写错。
@@ -1145,6 +1339,25 @@ def _review_draft(user_goal: str, steps: list, draft: str) -> dict:
         return {"done": True, "gap": ""}
 
 
+def _is_censorship(e: Exception) -> bool:
+    s = str(e).lower()
+    return "451" in s or "censorship" in s or "blocked" in s
+
+
+def _friendly_error(e: Exception) -> str:
+    """把大模型接口报错翻译成人话：审查拦截是学生最容易碰到的，别吓人。"""
+    s = str(e)
+    low = s.lower()
+    if "451" in s or "censorship" in low or "blocked" in low:
+        return ("AI 平台的安全审查拦下了这轮内容（censorship_blocked）。这不是软件坏了——"
+                "通常是单次请求里带的正文太长，请换个问法：拆成小问题、少让 AI 铺开大段原文，稍后重试即可。")
+    if "429" in s or "rate limit" in low:
+        return "AI 平台限流了，等几秒再发一次就好。"
+    if "timeout" in low or "timed out" in low:
+        return "AI 平台响应超时，请重试一次。"
+    return f"调用大模型失败：{e}"
+
+
 def run_events(ctx: AgentContext, messages: list, allow_write: bool = True):
     """生成器：边跑边吐事件，最后一个事件是 {"type":"done", ...}。
 
@@ -1178,17 +1391,39 @@ def run_events(ctx: AgentContext, messages: list, allow_write: bool = True):
     used = 0
     reviews = 0
     failures: dict = {}  # (tool, 参数) -> 上次失败原因：原样重试没有意义，直接短路
-    yield {"type": "state", "state": "act"}
+    succeeded: set = set()  # 已成功过的 (tool, 参数)：结果还在上下文里，重复调用只会白灌一遍大文本
+    salvaged = False  # 审查拦截后「摘原文重试」只做一次，防救不回来时白耗轮次
+    t_start = time.monotonic()
+    stop_reason = "rounds"
+    yield {"type": "state", "state": "act", "round": 1}
     for round_no in range(1, MAX_ROUNDS + 1):
+        if time.monotonic() - t_start > MAX_WALL_SECONDS:
+            stop_reason = "time"
+            break
         try:
             msg = ai_helper.chat_completion(convo, tools=specs)
         except Exception as e:
-            yield {"type": "error", "message": f"调用大模型失败：{e}"}
+            # 平台审查拦截多半是大段工具原文（党史长文）撑的：把原文摘掉换成一句话，
+            # 保留工作记录再试一次，让前面几轮工具不至于白跑（只救一次）。
+            if _is_censorship(e) and not salvaged and any(m.get("role") == "tool" for m in convo):
+                salvaged = True
+                for m in convo:
+                    if m.get("role") == "tool":
+                        m["content"] = ("（工具返回的原文因平台内容审查被省略；"
+                                        "你的操作记录还在，请基于已有信息直接答复学生，不要再复读原文）")
+                yield {"type": "state", "state": "act", "reason": "审查拦截，已摘除大段原文重试",
+                       "round": round_no}
+                continue
+            yield {"type": "error", "message": _friendly_error(e)}
             yield {"type": "done", "reply": "", "steps": steps, "rounds": round_no,
                    "tool_calls": used, "error": str(e)}
             return
 
         calls = msg.get("tool_calls") or []
+        # 模型的中间想法：有工具调用时它的 content 就是「我打算先查什么」——实时吐给前端展示
+        thinking = (msg.get("content") or "").strip()
+        if calls and thinking:
+            yield {"type": "thinking", "round": round_no, "text": thinking[:400]}
         if not calls:
             text = (msg.get("content") or "").strip()
             if not text:
@@ -1196,11 +1431,11 @@ def run_events(ctx: AgentContext, messages: list, allow_write: bool = True):
             # ---- REVIEW：动过工具才有审查价值（纯问答直接放行，省一次调用）----
             if used > 0 and reviews < MAX_REVIEWS:
                 reviews += 1
-                yield {"type": "state", "state": "review", "round": reviews}
+                yield {"type": "state", "state": "review", "round": round_no, "review": reviews}
                 verdict = _review_draft(user_goal, steps, text)
                 if not verdict["done"]:
                     yield {"type": "state", "state": "act", "reason": verdict["gap"],
-                           "review": reviews}
+                           "review": reviews, "round": round_no}
                     convo.append({"role": "assistant", "content": text})
                     convo.append({
                         "role": "user",
@@ -1210,9 +1445,10 @@ def run_events(ctx: AgentContext, messages: list, allow_write: bool = True):
                     })
                     continue
             # ---- FINALIZE ----
-            yield {"type": "state", "state": "finalize"}
+            yield {"type": "state", "state": "finalize", "round": round_no}
             yield {"type": "done", "reply": text, "steps": steps,
-                   "rounds": round_no, "tool_calls": used, "reviews": reviews}
+                   "rounds": round_no, "tool_calls": used, "reviews": reviews,
+                   "elapsed_ms": int((time.monotonic() - t_start) * 1000)}
             return
 
         convo.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
@@ -1225,8 +1461,9 @@ def run_events(ctx: AgentContext, messages: list, allow_write: bool = True):
             except json.JSONDecodeError:
                 args = {}
             desc = TOOLS.get(name, {}).get("spec", {}).get("function", {}).get("description", "")
-            yield {"type": "step", "phase": "start", "tool": name,
+            yield {"type": "step", "phase": "start", "tool": name, "round": round_no,
                    "label": desc[:20], "args": args, "write": bool(TOOLS.get(name, {}).get("write"))}
+            t_tool = time.monotonic()
 
             if used >= MAX_TOOL_CALLS:
                 result = {"ok": False, "error": "工具调用次数已达上限，请直接基于已有信息作答"}
@@ -1237,30 +1474,39 @@ def run_events(ctx: AgentContext, messages: list, allow_write: bool = True):
                     result = {"ok": False,
                               "error": f"原样重试没有意义：刚才同样的调用已失败（{failures[key]}）。"
                                        "请修改参数，或先调只读工具核实"}
+                elif key in succeeded:
+                    result = {"ok": False, "repeated": True,
+                              "error": "同样的调用刚才已成功，完整结果就在上文，直接使用即可，"
+                                       "不要原样重复调用；需要更多数据请换更具体的过滤条件"}
                 else:
                     result = execute_tool(ctx, name, args, allow_write)
                     used += 1
-                    if not result.get("ok", True):
+                    if result.get("ok", True):
+                        succeeded.add(key)
+                    else:
                         failures[key] = str(result.get("error", ""))[:120]
 
             step = {"tool": name, "args": args, "ok": bool(result.get("ok", True)),
-                    "summary": _summarize(name, result)}
+                    "round": round_no, "summary": _summarize(name, result)}
             steps.append(step)
             yield {"type": "step", "phase": "end", "tool": name, "ok": step["ok"],
-                   "summary": step["summary"], "detail": result}
+                   "round": round_no, "summary": step["summary"], "detail": result,
+                   "ms": int((time.monotonic() - t_tool) * 1000)}
             convo.append({
                 "role": "tool",
                 "tool_call_id": tc.get("id") or name,
                 "content": json.dumps(result, ensure_ascii=False)[:MAX_TOOL_RESULT],
             })
 
-    # 轮次用尽：不许再调工具，强制模型收尾给结论——否则学生只看到一堆工具卡片没答案
+    # 轮次/时长用尽：不许再调工具，强制模型收尾给结论——否则学生只看到一堆工具卡片没答案
     reply = _force_final(convo)
     yield {"type": "state", "state": "finalize"}
     yield {"type": "done",
            "reply": reply or "（工具调用轮次用尽，先把上面已经写入的结果用起来；"
                              "要更细的任务请拆成小问题再问一次。）",
-           "steps": steps, "rounds": MAX_ROUNDS, "tool_calls": used, "truncated": True}
+           "steps": steps, "rounds": MAX_ROUNDS, "tool_calls": used, "truncated": True,
+           "truncated_by": stop_reason,
+           "elapsed_ms": int((time.monotonic() - t_start) * 1000)}
 
 
 def run(ctx: AgentContext, messages: list, allow_write: bool = True,
@@ -1277,6 +1523,8 @@ def run(ctx: AgentContext, messages: list, allow_write: bool = True,
 
 def _summarize(name: str, result: dict) -> str:
     """给界面看的一行结果描述。"""
+    if result.get("repeated"):
+        return "重复调用已拦下（结果上文给过了）"
     if result.get("message"):
         return str(result["message"])[:60]
     if result.get("error"):
@@ -1286,7 +1534,10 @@ def _summarize(name: str, result: dict) -> str:
     if "items" in result:
         return f"命中 {result.get('count', len(result['items']))} 条"
     if "text" in result:
-        return f"读取 {len(result['text'])} 字（共 {result.get('total_chars', '?')} 字）"
+        total = result.get("total_chars")
+        if total:
+            return f"读取 {len(result['text'])} 字（共 {total} 字）"
+        return f"读取 {len(result['text'])} 字"
     if "created" in result:
         return f"新增 {result['created']} 题"
     if "matched" in result:

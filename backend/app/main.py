@@ -136,6 +136,7 @@ def init_db() -> None:
             type TEXT NOT NULL DEFAULT 'short_answer',
             question TEXT NOT NULL,
             answer TEXT NOT NULL DEFAULT '',
+            evidence TEXT NOT NULL DEFAULT '',
             source TEXT NOT NULL DEFAULT 'manual',
             created_at TEXT NOT NULL,
             FOREIGN KEY(kp_id) REFERENCES knowledge_points(id) ON DELETE CASCADE
@@ -196,6 +197,20 @@ def init_db() -> None:
             UNIQUE(user_id, kind, content)
         );
         CREATE INDEX IF NOT EXISTS idx_memory_user ON user_memory(user_id, updated_at);
+        CREATE TABLE IF NOT EXISTS text_notes(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
+            uuid TEXT,
+            node_code TEXT NOT NULL,
+            offset INTEGER NOT NULL DEFAULT 0,
+            length INTEGER NOT NULL DEFAULT 0,
+            quote TEXT NOT NULL DEFAULT '',
+            note TEXT NOT NULL DEFAULT '',
+            color TEXT NOT NULL DEFAULT 'yellow',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_notes_user ON text_notes(user_id, node_code);
         """)
     conn.commit()
     # 顺序：先补 uuid 列（demo 插入要用）→ 保证 users.id=1 → 再做 user_id 迁移
@@ -255,6 +270,7 @@ USER_TABLES = (
     "wrong_book",
     "events",
     "user_memory",
+    "text_notes",
 )
 
 
@@ -391,6 +407,8 @@ def migrate_qushi(conn: sqlite3.Connection) -> None:
         ("knowledge_points", "node_code", "TEXT NOT NULL DEFAULT ''"),
         ("knowledge_points", "exam_type", "TEXT NOT NULL DEFAULT ''"),
         ("questions", "exam_type", "TEXT NOT NULL DEFAULT ''"),
+        # 教材原文依据（AI 出题必填的原句摘录；空 = 手动/旧数据）
+        ("questions", "evidence", "TEXT NOT NULL DEFAULT ''"),
         ("events", "kind", "TEXT NOT NULL DEFAULT 'event'"),
         ("events", "node_code", "TEXT NOT NULL DEFAULT ''"),
         ("wrong_book", "next_review_at", "TEXT NOT NULL DEFAULT ''"),
@@ -2386,6 +2404,98 @@ def memory_delete(mid: int, uid: int = Depends(require_user)):
     conn.close()
     if cur.rowcount == 0:
         raise HTTPException(404, "没有这条记忆")
+    return {"deleted": cur.rowcount}
+
+
+@app.get("/api/text-notes")
+def text_notes_list(node: str = "", uid: int = Depends(require_user)):
+    """教材笔记：正文划词高亮/批注。node 传节 code 则只取该节，否则全量。"""
+    conn = db()
+    if node:
+        rows = conn.execute(
+            "SELECT id, uuid, node_code, offset, length, quote, note, color, created_at, updated_at "
+            "FROM text_notes WHERE user_id=? AND node_code=? ORDER BY offset",
+            (uid, node),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, uuid, node_code, offset, length, quote, note, color, created_at, updated_at "
+            "FROM text_notes WHERE user_id=? ORDER BY updated_at DESC LIMIT 500",
+            (uid,),
+        ).fetchall()
+    conn.close()
+    return {"items": [dict(r) for r in rows]}
+
+
+@app.post("/api/text-notes", status_code=201)
+def text_notes_create(payload: dict, uid: int = Depends(require_user)):
+    node_code = str(payload.get("node_code") or "").strip()
+    quote = str(payload.get("quote") or "").strip()
+    if not node_code or not quote:
+        raise HTTPException(400, "node_code 和 quote（划选的原文）必填")
+    offset = max(int(payload.get("offset") or 0), 0)
+    length = max(int(payload.get("length") or len(quote)), 0)
+    note = str(payload.get("note") or "").strip()
+    color = str(payload.get("color") or "yellow").strip()
+    if color not in ("yellow", "green", "blue", "pink"):
+        color = "yellow"
+    conn = db()
+    cur = conn.execute(
+        "INSERT INTO text_notes(user_id,uuid,node_code,offset,length,quote,note,color,"
+        "created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+        (uid, uuid.uuid4().hex, node_code, offset, min(length, 600), quote[:600],
+         note[:2000], color, now(), now()),
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT id, uuid, node_code, offset, length, quote, note, color, created_at, updated_at "
+        "FROM text_notes WHERE id=?", (cur.lastrowid,)
+    ).fetchone()
+    conn.close()
+    return dict(row)
+
+
+@app.patch("/api/text-notes/{nid}")
+def text_notes_update(nid: int, payload: dict, uid: int = Depends(require_user)):
+    fields, vals = [], []
+    if "note" in payload:
+        fields.append("note=?")
+        vals.append(str(payload.get("note") or "").strip()[:2000])
+    if "color" in payload:
+        color = str(payload.get("color") or "yellow").strip()
+        if color not in ("yellow", "green", "blue", "pink"):
+            color = "yellow"
+        fields.append("color=?")
+        vals.append(color)
+    if not fields:
+        raise HTTPException(400, "没有要改的字段（note / color）")
+    conn = db()
+    vals.append(now())
+    vals.append(nid)
+    vals.append(uid)
+    cur = conn.execute(
+        f"UPDATE text_notes SET {', '.join(fields)}, updated_at=? WHERE id=? AND user_id=?",
+        vals,
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT id, uuid, node_code, offset, length, quote, note, color, created_at, updated_at "
+        "FROM text_notes WHERE id=?", (nid,)
+    ).fetchone()
+    conn.close()
+    if cur.rowcount == 0 or row is None:
+        raise HTTPException(404, "没有这条笔记")
+    return dict(row)
+
+
+@app.delete("/api/text-notes/{nid}")
+def text_notes_delete(nid: int, uid: int = Depends(require_user)):
+    conn = db()
+    cur = conn.execute("DELETE FROM text_notes WHERE id=? AND user_id=?", (nid, uid))
+    conn.commit()
+    conn.close()
+    if cur.rowcount == 0:
+        raise HTTPException(404, "没有这条笔记")
     return {"deleted": cur.rowcount}
 
 

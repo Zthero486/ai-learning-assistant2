@@ -132,6 +132,28 @@
         "422"
       ]
     },
+    "DELETE /api/text-notes/{nid}": {
+      "operation_id": "text_notes_delete_api_text_notes__nid__delete",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "path",
+          "name": "nid",
+          "required": true,
+          "schema": "integer"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
     "GET /api/ai/tools": {
       "operation_id": "ai_tools_api_ai_tools_get",
       "params": [
@@ -528,6 +550,28 @@
         "422"
       ]
     },
+    "GET /api/text-notes": {
+      "operation_id": "text_notes_list_api_text_notes_get",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "query",
+          "name": "node",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
     "GET /api/timeline": {
       "operation_id": "get_timeline_api_timeline_get",
       "params": [
@@ -690,6 +734,33 @@
         {
           "in": "path",
           "name": "tid",
+          "required": true,
+          "schema": "integer"
+        }
+      ],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "PATCH /api/text-notes/{nid}": {
+      "operation_id": "text_notes_update_api_text_notes__nid__patch",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "path",
+          "name": "nid",
           "required": true,
           "schema": "integer"
         }
@@ -1152,6 +1223,27 @@
         "422"
       ]
     },
+    "POST /api/text-notes": {
+      "operation_id": "text_notes_create_api_text_notes_post",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": {
+        "content": [
+          "json:object"
+        ],
+        "required": true
+      },
+      "responses": [
+        "201",
+        "422"
+      ]
+    },
     "POST /api/wrong-book/clear": {
       "operation_id": "clear_wrong_book_api_wrong_book_clear_post",
       "params": [
@@ -1388,11 +1480,11 @@
         "status": 404
       },
       "list": {
-        "body": "list<{\"answer\": \"string\", \"created_at\": \"string\", \"exam_type\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"question\": \"string\", \"source\": \"string\", \"type\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\"}>",
+        "body": "list<{\"answer\": \"string\", \"created_at\": \"string\", \"evidence\": \"string\", \"exam_type\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"question\": \"string\", \"source\": \"string\", \"type\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\"}>",
         "status": 200
       },
       "list_by_kp": {
-        "body": "list<{\"answer\": \"string\", \"created_at\": \"string\", \"exam_type\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"question\": \"string\", \"source\": \"string\", \"type\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\"}>",
+        "body": "list<{\"answer\": \"string\", \"created_at\": \"string\", \"evidence\": \"string\", \"exam_type\": \"string\", \"id\": \"integer\", \"kp_id\": \"integer\", \"kp_title\": \"string\", \"question\": \"string\", \"source\": \"string\", \"type\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\"}>",
         "status": 200
       },
       "submit": {

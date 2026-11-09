@@ -12,7 +12,13 @@
         直接用一句话让它干活，例如「{{ placeholderByContext }}」——它能读写这个软件的数据，答题、出题的数据都会正常入库。
       </div>
       <div v-for="(m, i) in recent" :key="i" :class="['aii-msg', m.role]">
-        <div v-if="m.steps && m.steps.length" class="aii-steps">
+        <AiTrace
+          v-if="m.trace && m.trace.length"
+          compact
+          :trace="m.trace" :pending="!!m.pending"
+          :elapsed-ms="m.elapsedMs || 0" :start-at="m.startAt || 0"
+        />
+        <div v-else-if="m.steps && m.steps.length" class="aii-steps">
           <span
             v-for="(s, j) in m.steps" :key="j"
             :class="['aii-step', { fail: s.ok === false, write: s.write }]"
@@ -41,6 +47,7 @@
 // 与浮窗/主对话页共用同一份会话历史与联动逻辑（useAiConversation）。
 import { ref, computed, watch, nextTick } from 'vue'
 import { useAiConversation, toolLabel } from '../composables/useAiConversation'
+import AiTrace from './AiTrace.vue'
 
 const props = defineProps({
   context: { type: String, required: true }, // 如「自测」「复习任务」

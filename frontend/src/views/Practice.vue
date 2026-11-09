@@ -196,6 +196,7 @@
               <span class="q-text">{{ i + 1 }}. {{ qq.question }}</span>
             </div>
             <div class="q-ans">参考答案：{{ qq.answer }}</div>
+            <div v-if="qq.evidence" class="q-evidence">原文依据：{{ qq.evidence }}</div>
           </div>
           <el-empty v-if="!questions.length" description="还没有题目：点上方「AI 错题专项」，或去「史实要点」页对知识点点「AI 出题」" />
         </el-collapse-item>
@@ -638,4 +639,9 @@ onMounted(() => {
 .q-head { display: flex; gap: 6px; align-items: baseline; }
 .q-text { margin-left: 6px; font-weight: 600; line-height: 1.6; }
 .q-ans { margin-top: 6px; color: #67c23a; font-size: 13px; padding-left: 4px; }
+.q-evidence {
+  margin-top: 5px; padding: 6px 10px;
+  background: #f8f9fb; border-left: 3px solid #d3dce6; border-radius: 0 6px 6px 0;
+  color: #7a828e; font-size: 12.5px; line-height: 1.7;
+}
 </style>

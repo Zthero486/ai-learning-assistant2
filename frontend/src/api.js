@@ -203,6 +203,11 @@ export default {
   // AI 记忆（用户画像）
   memoryList: () => request('/api/memory'),
   memoryDelete: (id) => request(`/api/memory/${id}`, { method: 'DELETE' }),
+  // 教材笔记（划词高亮/批注）
+  listNotes: (node = '') => request(`/api/text-notes${node ? `?node=${encodeURIComponent(node)}` : ''}`),
+  createNote: (body) => request('/api/text-notes', { method: 'POST', body: JSON.stringify(body) }),
+  updateNote: (id, body) => request(`/api/text-notes/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteNote: (id) => request(`/api/text-notes/${id}`, { method: 'DELETE' }),
   // AI 对话窗口（Agent）：onEvent 收 SSE 事件
   aiChat: (payload, handlers) => streamChat(payload, handlers),
   // 跨机同步

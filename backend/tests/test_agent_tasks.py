@@ -46,8 +46,8 @@ def test_questions_as_json_string_is_accepted(party_ctx):
     """模型最常见的病：把数组序列化成字符串传进来 → 必须接住，而不是 8 次重试。"""
     ctx, kp_id = party_ctx
     payload = json.dumps([
-        {"type": "单选题", "question": "第一次国共合作发生于哪一年？", "answer": "1924年"},
-        {"type": "简答", "question": "简述合作的政治基础。", "answer": "新三民主义"},
+        {"type": "单选题", "question": "第一次国共合作发生于哪一年？", "answer": "1924年", "evidence": "1924年国民党一大召开"},
+        {"type": "简答", "question": "简述合作的政治基础。", "answer": "新三民主义", "evidence": "新三民主义是合作的政治基础"},
     ], ensure_ascii=False)
     r = ai_agent.execute_tool(ctx, "create_questions",
                               {"kp_id": kp_id, "questions": payload}, allow_write=True)
@@ -59,7 +59,7 @@ def test_single_question_object_is_wrapped(party_ctx):
     ctx, kp_id = party_ctx
     r = ai_agent.execute_tool(ctx, "create_questions",
                               {"kp_id": kp_id,
-                               "questions": {"question": "大革命失败的原因？", "answer": "略"}},
+                               "questions": {"question": "大革命失败的原因？", "answer": "略", "evidence": "原文依据"}},
                               allow_write=True)
     assert r["ok"] is True and r["created"] == 1
 
@@ -71,10 +71,10 @@ def test_bad_items_are_skipped_with_reasons(party_ctx):
         ctx, "create_questions",
         {"kp_id": kp_id,
          "questions": [
-             {"question": "好题", "answer": "好答案"},
+             {"question": "好题", "answer": "好答案", "evidence": "原文依据"},
              "一个字符串",
-             {"answer": "没有题干"},
-             {"question": "  ", "answer": "空题干"},
+             {"answer": "没有题干", "evidence": "原文依据"},
+             {"question": "  ", "answer": "空题干", "evidence": "原文依据"},
          ]},
         allow_write=True)
     assert r["ok"] is True and r["created"] == 1
@@ -93,10 +93,132 @@ def test_all_bad_returns_actionable_error(party_ctx):
 
 def test_oversized_batch_is_truncated_not_rejected(party_ctx):
     ctx, kp_id = party_ctx
-    many = [{"question": f"题{i}", "answer": "略"} for i in range(15)]
+    many = [{"question": f"题{i}", "answer": "略", "evidence": "原文依据"} for i in range(15)]
     r = ai_agent.execute_tool(ctx, "create_questions",
                               {"kp_id": kp_id, "questions": many}, allow_write=True)
     assert r["ok"] is True and r["created"] == ai_agent.MAX_QUESTIONS_PER_CALL
+
+
+# ---------- 原文依据硬约束（2026-11-09 用户要求：找不到教材原文不出题） ----------
+
+def test_missing_evidence_questions_are_rejected(party_ctx):
+    """没有 evidence（教材原文依据）的题一律不落库，好的照常入库。"""
+    ctx, kp_id = party_ctx
+    r = ai_agent.execute_tool(
+        ctx, "create_questions",
+        {"kp_id": kp_id,
+         "questions": [
+             {"question": "有依据的题", "answer": "略", "evidence": "教材里的原句"},
+             {"question": "没依据的题", "answer": "略"},
+             {"question": "空依据的题", "answer": "略", "evidence": "   "},
+         ]},
+        allow_write=True)
+    assert r["ok"] is True and r["created"] == 1
+    assert len(r["skipped"]) == 2
+    assert all("evidence" in s for s in r["skipped"])
+    assert _db_question_count(ctx, kp_id) == 1
+    # 库里存的 evidence 就是那句原文
+    conn = ctx.conn()
+    try:
+        ev = conn.execute("SELECT evidence FROM questions WHERE kp_id=?", (kp_id,)).fetchone()[0]
+    finally:
+        conn.close()
+    assert ev == "教材里的原句"
+
+
+def test_all_missing_evidence_returns_actionable_error(party_ctx):
+    """整批都没依据 → 报错要引导模型先调 get_node_text 拿原文。"""
+    ctx, kp_id = party_ctx
+    r = ai_agent.execute_tool(ctx, "create_questions",
+                              {"kp_id": kp_id,
+                               "questions": [{"question": "题", "answer": "略"}]},
+                              allow_write=True)
+    assert r["ok"] is False
+    assert "get_node_text" in r["error"]
+
+
+def test_get_node_text_returns_text_and_hints(party_ctx):
+    """读教材正文：返回原文、总数和出题提示；这是出题依据的唯一入口。"""
+    ctx, _kp_id = party_ctx
+    r = ai_agent.execute_tool(ctx, "get_node_text", {"node_code": "party-01-01"}, allow_write=False)
+    assert r["ok"] is True
+    assert r["text"].strip()
+    assert r["total_chars"] >= len(r["text"])
+    assert "evidence" in r["hint"]
+
+
+def test_get_node_text_missing_or_empty(party_ctx):
+    ctx, _kp_id = party_ctx
+    bad = ai_agent.execute_tool(ctx, "get_node_text", {"node_code": "party-99-99"}, allow_write=False)
+    assert bad["ok"] is False and "不存在" in bad["error"]
+    empty = ai_agent.execute_tool(ctx, "get_node_text", {}, allow_write=False)
+    assert empty["ok"] is False and "node_code" in empty["error"]
+
+
+# ---------- AI 划重点（highlight_text） ----------
+def test_highlight_text_creates_purple_note(party_ctx):
+    """quote 逐字摘自正文 → 落一条紫色 text_notes；重复划同一处只更新不重复建。"""
+    ctx, _kp_id = party_ctx
+    src = ai_agent.execute_tool(ctx, "get_node_text", {"node_code": "party-01-01"}, allow_write=False)
+    assert src["ok"] is True
+    quote = " ".join(src["text"].split())[:20]  # 故意掺空白差异，验证定位容错
+    r = ai_agent.execute_tool(ctx, "highlight_text",
+                              {"node_code": "party-01-01", "quote": quote, "note": "考点"},
+                              allow_write=True)
+    assert r["ok"] is True and r["action"] == "created"
+    conn = ctx.conn()
+    try:
+        row = conn.execute(
+            "SELECT color, note, quote FROM text_notes WHERE id=?", (r["note_id"],)).fetchone()
+        # 重复划同一处 → updated，不落第二条
+        r2 = ai_agent.execute_tool(ctx, "highlight_text",
+                                   {"node_code": "party-01-01", "quote": quote},
+                                   allow_write=True)
+        total = conn.execute(
+            "SELECT COUNT(*) FROM text_notes WHERE user_id=? AND node_code=?",
+            (ctx.uid, "party-01-01")).fetchone()[0]
+    finally:
+        conn.close()
+    assert row["color"] == "purple" and row["note"] == "考点" and row["quote"]
+    assert r2["ok"] is True and r2["action"] == "updated" and total == 1
+
+
+def test_highlight_text_rejects_rewritten_quote(party_ctx):
+    """改写过语义的句子定位不到 → 拒绝并要求逐字摘录；跨课程节点拒绝。"""
+    ctx, _kp_id = party_ctx
+    bad = ai_agent.execute_tool(ctx, "highlight_text",
+                                {"node_code": "party-01-01", "quote": "这句话绝对不在教材正文里xyz"},
+                                allow_write=True)
+    assert bad["ok"] is False and "逐字" in bad["error"]
+    other = ai_agent.execute_tool(ctx, "highlight_text",
+                                  {"node_code": "reform-01-01", "quote": "随便什么句子"},
+                                  allow_write=True)
+    assert other["ok"] is False and "不属于当前课程" in other["error"]
+
+
+def test_highlight_text_tolerates_punctuation_drift(party_ctx):
+    """模型摘录时标点全/半角不一致或多了引号 → 仍应定位成功。"""
+    ctx, _kp_id = party_ctx
+    src = ai_agent.execute_tool(ctx, "get_node_text", {"node_code": "party-01-01"}, allow_write=False)
+    assert src["ok"] is True
+    sentence = src["text"].split("。")[0]  # 取第一句
+    drifted = sentence.replace("，", ",").replace("、", ",").replace("：", ":") + "」"
+    r = ai_agent.execute_tool(ctx, "highlight_text",
+                              {"node_code": "party-01-01", "quote": drifted},
+                              allow_write=True)
+    assert r["ok"] is True, r.get("error")
+
+
+def test_highlight_text_tolerates_tail_drift(party_ctx):
+    """模型照着原文写却在中段改字（保留了前 12+ 字前缀）→ 按最长可定位前缀落库。"""
+    ctx, _kp_id = party_ctx
+    src = ai_agent.execute_tool(ctx, "get_node_text", {"node_code": "party-01-01"}, allow_write=False)
+    body = "".join(src["text"].split())
+    quote = body[:14] + "（模型改写从这里开始）" + body[30:40]
+    r = ai_agent.execute_tool(ctx, "highlight_text",
+                              {"node_code": "party-01-01", "quote": quote}, allow_write=True)
+    assert r["ok"] is True, r.get("error")
+    assert r["length"] <= 16
 
 
 # ---------- 原样重试的短路 ----------

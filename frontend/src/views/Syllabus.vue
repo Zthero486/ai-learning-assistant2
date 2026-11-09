@@ -58,7 +58,9 @@
           <!-- 教材正文 -->
           <div class="text-block">
             <div class="block-head text-head">
-              <span>教材正文 <em v-if="node.content" class="text-count">{{ node.content.length }} 字</em></span>
+              <span>教材正文 <em v-if="node.content" class="text-count">{{ node.content.length }} 字</em>
+                <em v-if="notes.length" class="text-count note-count">· 笔记 {{ notes.length }}</em>
+              </span>
               <div class="text-tools" v-if="node.content">
                 <el-button link size="small" @click="fontStep(-1)">A-</el-button>
                 <el-button link size="small" @click="fontStep(1)">A+</el-button>
@@ -70,10 +72,24 @@
             <div
               v-if="node.content"
               v-show="textOpen"
+              ref="textBody"
               class="text-body"
               :style="{ fontSize: fontSize + 'px' }"
+              @mouseup="onSelectEnd"
+              @touchend="onSelectEnd"
+              @scroll="selBar.show = false"
             >
-              <p v-for="(p, i) in paragraphs" :key="i">{{ p }}</p>
+              <p v-for="(p, i) in renderedParas" :key="i" :data-pi="i">
+                <template v-for="(seg, j) in p.segs" :key="j">
+                  <mark
+                    v-if="seg.note"
+                    :class="['mk', 'c-' + seg.note.color]"
+                    @click.stop="openNote(seg.note, $event)"
+                  >{{ seg.t }}</mark>
+                  <template v-else>{{ seg.t }}</template>
+                </template>
+              </p>
+              <div v-if="!notes.length" class="text-hint">划选正文可高亮或写批注，点击已有高亮可编辑</div>
             </div>
             <div v-else class="text-missing">
               本节正文还没切分出来（教材是扫描版，个别页序错乱）。可以先看「本章正文」，
@@ -139,13 +155,58 @@
   </div>
 
   <AiInline context="教材目录" />
+
+  <!-- 划词浮动工具条（fixed 定位） -->
+  <div
+    v-if="selBar.show"
+    class="sel-bar"
+    :style="{ left: selBar.x + 'px', top: selBar.y + 'px' }"
+  >
+    <span
+      v-for="c in USER_COLORS"
+      :key="c"
+      class="sel-dot"
+      :style="{ background: NOTE_COLORS[c] }"
+      :title="'高亮：' + c"
+      @mousedown.prevent="saveSelection(c, false)"
+      @touchstart.prevent="saveSelection(c, false)"
+    ></span>
+    <span class="sel-btn" @mousedown.prevent="saveSelection('yellow', true)" @touchstart.prevent="saveSelection('yellow', true)">批注</span>
+    <span class="sel-btn" @mousedown.prevent="selBar.show = false" @touchstart.prevent="selBar.show = false">✕</span>
+  </div>
+
+  <!-- 笔记编辑弹窗 -->
+  <el-dialog v-model="noteDlg" title="教材笔记" width="420px">
+    <div class="note-quote">「{{ noteForm.quote }}」</div>
+    <el-input
+      v-model="noteForm.note"
+      type="textarea"
+      :rows="3"
+      maxlength="2000"
+      placeholder="批注内容（可留空，只改高亮颜色）"
+    />
+    <div class="color-row">
+      <span
+        v-for="c in dlgColors"
+        :key="c"
+        class="sel-dot big"
+        :class="{ on: noteForm.color === c }"
+        :style="{ background: NOTE_COLORS[c] }"
+        @click="noteForm.color = c"
+      ></span>
+    </div>
+    <template #footer>
+      <el-button type="danger" plain @click="removeNote">删除</el-button>
+      <el-button type="primary" :loading="saving" @click="saveNoteEdit">保存</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
 import AiInline from '../components/AiInline.vue'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowRight } from '@element-plus/icons-vue'
 import api, { auth } from '../api'
 
@@ -160,6 +221,20 @@ const saving = ref(false)
 const form = reactive({ title: '', description: '', exam_type: 'recall' })
 const textOpen = ref(true)
 const fontSize = ref(Number(localStorage.getItem('kp_font') || 15))
+const textBody = ref(null)
+const notes = ref([])
+const flash = ref(null) // ?hl= 带来的临时定位高亮（不落库）
+const noteDlg = ref(false)
+const noteForm = reactive({ id: 0, quote: '', note: '', color: 'yellow' })
+const selBar = reactive({ show: false, x: 0, y: 0, quote: '', offset: 0, length: 0 })
+
+const NOTE_COLORS = { yellow: '#ffe58f', green: '#b7eb8f', blue: '#91caff', pink: '#ffadd2', purple: '#d3adf7' }
+const COLOR_HEX = { ...NOTE_COLORS, flash: '#ffc9c9' }
+// 用户划词可用色（紫色是 AI 专属，不开放给手动划选）
+const USER_COLORS = ['yellow', 'green', 'blue', 'pink']
+// 笔记弹窗色板：当前是 AI 紫时多列一个紫，让用户能保持/改回
+const dlgColors = computed(() =>
+  noteForm.color === 'purple' ? [...USER_COLORS, 'purple'] : USER_COLORS)
 
 const EXAM = { recall: '史实识记', sequence: '时序定位', argument: '史论结合', apply: '现实联系' }
 const KIND = { meeting: '会议', event: '事件', document: '文件' }
@@ -172,9 +247,42 @@ const charText = computed(() => {
   return n > 10000 ? `${(n / 10000).toFixed(1)} 万字` : `${n} 字`
 })
 
-const paragraphs = computed(() => {
-  const t = node.value?.content || ''
-  return t.split(/\n+/).map((s) => s.trim()).filter(Boolean)
+const renderedParas = computed(() => {
+  const content = node.value?.content || ''
+  if (!content) return []
+  // 高亮区间（含 ?hl= 的临时定位）合并进段落后切块渲染
+  const marks = notes.value.map((n) => ({ o: n.offset, l: n.length, note: n }))
+  if (flash.value) marks.push({ o: flash.value.offset, l: flash.value.length, note: { id: 0, color: 'flash' } })
+  marks.sort((a, b) => a.o - b.o)
+  const merged = []
+  for (const m of marks) {
+    const last = merged[merged.length - 1]
+    if (last && m.o < last.o + last.l) continue // 重叠的高亮丢弃后到的（简单处理）
+    merged.push(m)
+  }
+  const paras = []
+  const re = /[^\n]+/g
+  let m2
+  while ((m2 = re.exec(content))) {
+    let s = m2.index
+    let e = m2.index + m2[0].length
+    while (s < e && /\s/.test(content[s])) s++
+    while (e > s && /\s/.test(content[e - 1])) e--
+    if (e <= s) continue
+    const segs = []
+    let cur = s
+    for (const mk of merged) {
+      const ms = Math.max(mk.o, s)
+      const me = Math.min(mk.o + mk.l, e)
+      if (me <= ms) continue
+      if (ms > cur) segs.push({ t: content.slice(cur, ms) })
+      segs.push({ t: content.slice(ms, me), note: mk.note })
+      cur = me
+    }
+    if (cur < e) segs.push({ t: content.slice(cur, e) })
+    paras.push({ start: s, segs })
+  }
+  return paras
 })
 
 function fontStep(d) {
@@ -184,7 +292,218 @@ function fontStep(d) {
 
 watch(node, () => {
   textOpen.value = true
+  flash.value = null
 })
+
+// ---- 教材笔记：加载 / 划词 / 编辑 ----
+async function loadNotes(code) {
+  try {
+    notes.value = (await api.listNotes(code)).items
+  } catch {
+    notes.value = []
+  }
+}
+
+function offsetInPara(pEl, textNode, nodeOffset) {
+  if (!textNode || textNode.nodeType !== Node.TEXT_NODE) return -1
+  let off = 0
+  const w = document.createTreeWalker(pEl, NodeFilter.SHOW_TEXT)
+  let n
+  while ((n = w.nextNode())) {
+    if (n === textNode) return off + nodeOffset
+    off += n.textContent.length
+  }
+  return -1
+}
+
+function onSelectEnd() {
+  // 移动端长按选区结束后稍等再取，避免拿到空选区
+  setTimeout(() => {
+    const sel = window.getSelection()
+    if (!sel || sel.isCollapsed || !sel.rangeCount) { selBar.show = false; return }
+    const quote = sel.toString()
+    if (!quote || quote.replace(/\s+/g, '').length < 2) { selBar.show = false; return }
+    const range = sel.getRangeAt(0)
+    const sc = range.startContainer
+    const pEl = (sc.nodeType === Node.TEXT_NODE ? sc.parentElement : sc)?.closest?.('p')
+    const para = pEl ? renderedParas.value[Number(pEl.dataset.pi)] : null
+    if (!para) { selBar.show = false; return }
+    // 只支持单段内划选（跨段偏移换算不可靠）
+    const ec = range.endContainer
+    const pEl2 = (ec.nodeType === Node.TEXT_NODE ? ec.parentElement : ec)?.closest?.('p')
+    if (pEl2 !== pEl) { selBar.show = false; ElMessage.info('一次只划选一段内的文字'); return }
+    const local = offsetInPara(pEl, range.startContainer, range.startOffset)
+    if (local < 0) { selBar.show = false; return }
+    const offset = para.start + local
+    selBar.quote = quote.trim()
+    selBar.offset = offset
+    selBar.length = quote.trim().length
+    const rect = range.getBoundingClientRect()
+    selBar.x = Math.min(Math.max(rect.left, 8), window.innerWidth - 210)
+    selBar.y = Math.max(rect.top - 44, 8)
+    selBar.show = true
+  }, 60)
+}
+
+async function saveSelection(color, withNote) {
+  let note = ''
+  if (withNote) {
+    try {
+      const r = await ElMessageBox.prompt('给这段原文写点批注（留空则只做高亮）', '新笔记', {
+        inputPlaceholder: '比如：这里的时间点爱考',
+      })
+      note = (r.value || '').trim()
+    } catch {
+      return // 用户取消
+    }
+  }
+  try {
+    const n = await api.createNote({
+      node_code: active.value,
+      offset: selBar.offset,
+      length: selBar.length,
+      quote: selBar.quote,
+      note,
+      color,
+    })
+    notes.value = [...notes.value, n].sort((a, b) => a.offset - b.offset)
+    selBar.show = false
+    window.getSelection()?.removeAllRanges()
+    ElMessage.success('已保存')
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
+function openNote(n) {
+  if (!n.id) return // 临时定位高亮不可编辑
+  const full = notes.value.find((x) => x.id === n.id)
+  if (!full) return
+  noteForm.id = full.id
+  noteForm.quote = full.quote
+  noteForm.note = full.note
+  noteForm.color = full.color
+  noteDlg.value = true
+}
+
+async function saveNoteEdit() {
+  saving.value = true
+  try {
+    const n = await api.updateNote(noteForm.id, { note: noteForm.note, color: noteForm.color })
+    notes.value = notes.value.map((x) => (x.id === n.id ? n : x))
+    noteDlg.value = false
+    ElMessage.success('已保存')
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function removeNote() {
+  try {
+    await ElMessageBox.confirm('删除这条高亮/批注？', '确认', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await api.deleteNote(noteForm.id)
+    notes.value = notes.value.filter((x) => x.id !== noteForm.id)
+    noteDlg.value = false
+    ElMessage.success('已删除')
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
+// ?hl= 原文定位：在正文里找这段话并临时高亮、滚动过去。
+// 教材正文来自 OCR 扫描件（「公元巧 16 年」「托马斯。莫尔」），模型引用时会顺手纠错，
+// 所以逐字匹配经常落空 —— 三级兜底：去空白 → 去标点 → 二元组相似度滑窗。
+function diceCoeff(a, b) {
+  if (a === b) return 1
+  if (a.length < 2 || b.length < 2) return 0
+  const bag = new Map()
+  for (let i = 0; i < a.length - 1; i++) {
+    const g = a.slice(i, i + 2)
+    bag.set(g, (bag.get(g) || 0) + 1)
+  }
+  let hit = 0
+  for (let i = 0; i < b.length - 1; i++) {
+    const g = b.slice(i, i + 2)
+    const c = bag.get(g)
+    if (c) { hit++; bag.set(g, c - 1) }
+  }
+  return (2 * hit) / (a.length - 1 + b.length - 1)
+}
+
+function locateQuote(q) {
+  const content = node.value?.content || ''
+  if (!content || !q) return
+  const build = (reStr) => {
+    const re = new RegExp(reStr, 'g')
+    const map = []
+    let norm = ''
+    for (let i = 0; i < content.length; i++) {
+      if (!re.test(content[i])) { norm += content[i]; map.push(i) }
+    }
+    return { re, norm, map }
+  }
+  const slice = (b, idx, len) => ({
+    offset: b.map[idx],
+    end: b.map[Math.min(idx + len - 1, b.map.length - 1)] + 1,
+  })
+  const exact = (b) => {
+    const nq = q.replace(b.re, '').slice(0, 120)
+    if (!nq) return null
+    const idx = b.norm.indexOf(nq)
+    if (idx >= 0) return { ...slice(b, idx, nq.length), soft: false }
+    // 前缀回退：句中 OCR/标点差异常见，用可定位的前缀先顶上
+    for (let L = Math.min(nq.length, 24); L >= 12; L--) {
+      const i2 = b.norm.indexOf(nq.slice(0, L))
+      if (i2 >= 0) return { ...slice(b, i2, L), soft: false }
+    }
+    return null
+  }
+  const fuzzy = (b) => {
+    const nq = q.replace(b.re, '').slice(0, 80)
+    if (nq.length < 8) return null
+    const len = Math.min(nq.length, b.norm.length)
+    let best = -1
+    let bestScore = 0
+    const step = Math.max(4, Math.floor(len / 12))
+    for (let i = 0; i + 8 <= b.norm.length; i += step) {
+      const score = diceCoeff(nq, b.norm.slice(i, i + len))
+      if (score > bestScore) { bestScore = score; best = i }
+    }
+    if (best < 0 || bestScore < 0.5) return null
+    return { ...slice(b, best, len), soft: true, score: bestScore }
+  }
+  const plain = build('\\s')
+  const punctFree = build('[\\p{P}\\p{S}\\s]')
+  const found = exact(plain) || exact(punctFree) || fuzzy(punctFree)
+  if (!found) {
+    ElMessage.info('没有在本节正文里找到这段原文，可能出自其他节')
+    return
+  }
+  if (found.soft) {
+    // 相似度命中的窗口可能从半个词开始，扩到完整句子再标，读起来更清楚
+    let s = found.offset
+    let e = found.end
+    const stop = /[。！？；\n]/
+    let guard = 0
+    while (s > 0 && !stop.test(content[s - 1]) && guard++ < 60) s--
+    guard = 0
+    while (e < content.length && !stop.test(content[e]) && guard++ < 60) e++
+    found.offset = s
+    found.end = e
+    ElMessage.info('教材是扫描版，已按相似度定位到对应段落')
+  }
+  flash.value = { offset: found.offset, length: found.end - found.offset }
+  nextTick(() => {
+    const el = textBody.value?.querySelector('.mk.c-flash')
+    if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  })
+}
 
 function toggle(code) {
   const i = opened.value.indexOf(code)
@@ -196,6 +515,7 @@ async function pick(code) {
   active.value = code
   try {
     node.value = await api.syllabusNode(code)
+    await loadNotes(code)
   } catch (e) {
     ElMessage.error(e.message)
   }
@@ -252,17 +572,33 @@ onMounted(async () => {
         opened.value = [hit.code]
         await pick(target)
       } else {
+        if (target) ElMessage.warning(`没有找到「${target}」这一节，已回到目录`)
         opened.value = [data.value.chapters[0].code]
         // 有正文就先展示本章正文，否则落到第一节
         const first = data.value.chapters[0]
         await pick(first.chars ? first.code : (first.sections[0]?.code || first.code))
       }
+      // /syllabus?node=xx&hl=原文片段：AI 词条卡「原文节选」点击跳转，定位并临时高亮
+      const hlq = String(route.query.hl || '').trim()
+      if (hlq) locateQuote(hlq)
     }
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
     loading.value = false
   }
+})
+
+// 页面已打开时 AI 浮窗再次联动跳转（route.query 变化）也要能定位
+watch(() => [route.query.node, route.query.hl], async ([n, hl]) => {
+  if (!n) return
+  if (n !== active.value) {
+    const hit = data.value.chapters.find((c) => c.code === n || c.sections.some((s) => s.code === n))
+    if (!hit) return
+    opened.value = [hit.code]
+    await pick(n)
+  }
+  if (hl) locateQuote(String(hl))
 })
 </script>
 
@@ -297,6 +633,32 @@ onMounted(async () => {
 .text-tools { display: flex; align-items: center; gap: 2px; }
 .text-body { font-size: 15px; line-height: 1.95; color: #303133; letter-spacing: .2px; max-height: 62vh; overflow-y: auto; padding-right: 6px; }
 .text-body p { margin: 0 0 1em; text-indent: 2em; text-align: justify; }
+.text-body mark { all: unset; }
+.mk { border-radius: 3px; padding: 1px 0; cursor: pointer; }
+.mk.c-yellow { background: #ffe58f; }
+.mk.c-purple { background: #d3adf7; }
+.mk.c-green { background: #b7eb8f; }
+.mk.c-blue { background: #91caff; }
+.mk.c-pink { background: #ffadd2; }
+.mk.c-flash { background: #ffc9c9; outline: 2px solid #ff7875; border-radius: 4px; }
+.text-hint { font-size: 11px; color: #c0c4cc; text-align: right; padding-top: 4px; }
+.note-count { color: #e6a23c; }
+.sel-bar {
+  position: fixed; z-index: 3000; display: flex; align-items: center; gap: 8px;
+  background: #303133; border-radius: 8px; padding: 6px 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
+}
+.sel-dot { width: 16px; height: 16px; border-radius: 50%; cursor: pointer; border: 1px solid rgba(255, 255, 255, .35); flex: none; }
+.sel-dot.big { width: 20px; height: 20px; border: 2px solid transparent; }
+.sel-dot.big.on { border-color: #409eff; }
+.sel-btn { color: #fff; font-size: 12px; cursor: pointer; padding: 0 2px; }
+.sel-btn:hover { color: #79bbff; }
+.note-quote {
+  background: #fafafa; border-left: 3px solid #ffe58f; padding: 8px 10px;
+  font-size: 13px; color: #606266; line-height: 1.7; margin-bottom: 10px;
+  max-height: 120px; overflow-y: auto;
+}
+.color-row { display: flex; gap: 10px; margin-top: 10px; align-items: center; }
 .text-missing { font-size: 12px; color: #909399; line-height: 1.8; padding: 6px 0 2px; }
 .block-head { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: #606266; margin: 16px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #f0f2f5; }
 .kp-item { padding: 8px 0; border-bottom: 1px dashed #f0f2f5; }

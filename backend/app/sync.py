@@ -23,6 +23,7 @@ CHAIN = (
     "tasks",
     "events",
     "user_memory",
+    "text_notes",
 )
 
 PAYLOAD_VERSION = 1
@@ -58,7 +59,7 @@ def build_export(conn: sqlite3.Connection) -> dict:
             LEFT JOIN materials m ON m.id = k.material_id"""),
         "questions": rows("""
             SELECT q.uuid, u.uuid AS owner, k.uuid AS kp_uuid,
-                   q.type, q.question, q.answer, q.source, q.exam_type, q.created_at
+                   q.type, q.question, q.answer, q.evidence, q.source, q.exam_type, q.created_at
             FROM questions q
             JOIN users u ON u.id = q.user_id
             LEFT JOIN knowledge_points k ON k.id = q.kp_id"""),
@@ -94,6 +95,11 @@ def build_export(conn: sqlite3.Connection) -> dict:
                    m.created_at, m.updated_at
             FROM user_memory m
             JOIN users u ON u.id = m.user_id"""),
+        "text_notes": rows("""
+            SELECT n.uuid, u.uuid AS owner, n.node_code, n.offset, n.length,
+                   n.quote, n.note, n.color, n.created_at, n.updated_at
+            FROM text_notes n
+            JOIN users u ON u.id = n.user_id"""),
     }
     payload["counts"] = {k: len(v) for k, v in payload.items() if isinstance(v, list)}
     return payload
@@ -236,7 +242,7 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
         if not r.get("uuid") or uuid_exists("questions", r["uuid"]):
             continue
         conn.execute(
-            "INSERT INTO questions(user_id,uuid,kp_id,type,question,answer,source,exam_type,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO questions(user_id,uuid,kp_id,type,question,answer,evidence,source,exam_type,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
             (
                 resolve_user(r["owner"]),
                 r["uuid"],
@@ -244,6 +250,7 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
                 r.get("type", "short_answer"),
                 r["question"],
                 r.get("answer", ""),
+                r.get("evidence", ""),
                 r.get("source", "manual"),
                 r.get("exam_type", ""),
                 r.get("created_at", ""),
@@ -386,6 +393,28 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
             ),
         )
         stats["user_memory"] += 1
+
+    # 10. text_notes（教材划词笔记：高亮/批注）
+    for r in payload.get("text_notes", []):
+        if not r.get("uuid") or uuid_exists("text_notes", r["uuid"]):
+            continue
+        conn.execute(
+            "INSERT OR IGNORE INTO text_notes(user_id,uuid,node_code,offset,length,"
+            "quote,note,color,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (
+                resolve_user(r["owner"]),
+                r["uuid"],
+                r.get("node_code", ""),
+                r.get("offset", 0) or 0,
+                r.get("length", 0) or 0,
+                r.get("quote", ""),
+                r.get("note", ""),
+                r.get("color", "yellow"),
+                r.get("created_at", ""),
+                r.get("updated_at", ""),
+            ),
+        )
+        stats["text_notes"] += 1
 
     conn.commit()
     conn.execute("PRAGMA foreign_keys=ON")

@@ -380,6 +380,16 @@ def test_connection() -> dict:
         if not get_proxy() and ("gemini" in get_base_url() or "openai.com" in get_base_url()):
             hint = "（该接口在境内需代理：可在 .env 里设置 AI_PROXY=http://127.0.0.1:端口）"
         return {"ok": False, "reason": "network", "message": f"网络不通：{e}{hint}"}
+    except Exception as e:
+        # 兜底：非 httpx 异常（如打包环境归档损坏导致的模块加载失败）也不能 500，
+        # 学生只会看到「请求失败」，必须给出可行动的提示。异常照记日志。
+        import traceback
+        traceback.print_exc()
+        return {
+            "ok": False,
+            "reason": "error",
+            "message": f"AI 调用出现意外错误：{type(e).__name__}: {e}（请重启软件再试一次）",
+        }
     return {
         "ok": True,
         "reason": "ok",

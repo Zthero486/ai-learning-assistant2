@@ -74,12 +74,22 @@ def main() -> int:
                     print(f"\n[{STATE_NAME.get(st, st)}]"
                           + (f" 第 {ev['round']} 次" if ev.get("round") else ""))
 
+            elif t == "thinking":
+                txt = (ev.get("text") or "").replace("\n", " ")
+                print(f"   💭 思考：{txt[:120]}")
+
             elif t == "step" and ev.get("phase") == "start":
                 mark = "写" if ev.get("write") else "读"
+                args = ev.get("args") or {}
+                brief = ", ".join(f"{k}={str(v)[:22]}" for k, v in list(args.items())[:3])
                 print(f"   · 调用 {ev['tool']}（{mark}）", end="")
+                if brief:
+                    print(f"  [{brief[:70]}]", end="")
 
             elif t == "step" and ev.get("phase") == "end":
-                print(f"  {'✓' if ev.get('ok') else '✗'} {ev.get('summary', '')}")
+                ms = ev.get("ms")
+                print(f"  {'✓' if ev.get('ok') else '✗'} {ev.get('summary', '')}"
+                      + (f"  ({ms}ms)" if ms is not None else ""))
                 tools.append(ev.get("tool"))
 
             elif t == "error":
@@ -92,9 +102,11 @@ def main() -> int:
                 print("─" * 60)
                 print(f"状态迁移：{' → '.join(STATE_NAME.get(x, x) for x in states)}")
                 print(f"工具 {ev.get('tool_calls', len(tools))} 次 / 模型轮次 {ev.get('rounds')} "
-                      f"/ 质检 {ev.get('reviews', 0)} 次 / 回流 {len(reflow)} 次")
+                      f"/ 质检 {ev.get('reviews', 0)} 次 / 回流 {len(reflow)} 次"
+                      + (f" / 用时 {ev['elapsed_ms'] / 1000:.1f}s" if ev.get("elapsed_ms") else ""))
                 if ev.get("truncated"):
-                    print("⚠ 轮次用尽，强制收尾")
+                    why = {"time": "总时长到顶", "rounds": "轮次用尽"}.get(ev.get("truncated_by"), "轮次用尽")
+                    print(f"⚠ {why}，强制收尾")
 
     return 0
 
