@@ -981,7 +981,7 @@ def create_task(body: dict, uid: int = Depends(require_user)):
 @app.get("/api/tasks")
 def list_tasks(uid: int = Depends(require_user)):
     conn = db()
-    sql = """SELECT t.*, k.title AS kp_title,
+    sql = """SELECT t.*, k.title AS kp_title, k.node_code AS kp_node,
        CASE WHEN t.due_date IS NOT NULL AND t.status!='done' AND date(t.due_date)<date('now','localtime')
             THEN 1 ELSE 0 END AS overdue
        FROM tasks t LEFT JOIN knowledge_points k ON k.id=t.kp_id

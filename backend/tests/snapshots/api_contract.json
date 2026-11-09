@@ -1416,7 +1416,7 @@
       },
       "due_soon_wide_has_item": false,
       "list": {
-        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"due_date\": \"string\", \"id\": \"integer\", \"kp_id\": \"null\", \"kp_title\": \"null\", \"overdue\": \"integer\", \"status\": \"string\", \"title\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\"}>",
+        "body": "list<{\"course\": \"string\", \"created_at\": \"string\", \"description\": \"string\", \"due_date\": \"string\", \"id\": \"integer\", \"kp_id\": \"null\", \"kp_node\": \"null\", \"kp_title\": \"null\", \"overdue\": \"integer\", \"status\": \"string\", \"title\": \"string\", \"user_id\": \"integer\", \"uuid\": \"string\"}>",
         "status": 200
       },
       "patch_status": {

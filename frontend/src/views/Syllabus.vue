@@ -242,10 +242,21 @@ onMounted(async () => {
     const track = auth.track() || route.query.track || ''
     data.value = await api.syllabus(track)
     if (data.value.chapters.length) {
-      opened.value = [data.value.chapters[0].code]
-      // 有正文就先展示本章正文，否则落到第一节
-      const first = data.value.chapters[0]
-      await pick(first.chars ? first.code : (first.sections[0]?.code || first.code))
+      // 支持 /syllabus?node=party-03-02 直达某一节（任务页「去复习」等入口用）
+      const target = route.query.node
+      const hit = target
+        ? data.value.chapters.find((c) => c.code === target
+            || c.sections.some((s) => s.code === target))
+        : null
+      if (hit) {
+        opened.value = [hit.code]
+        await pick(target)
+      } else {
+        opened.value = [data.value.chapters[0].code]
+        // 有正文就先展示本章正文，否则落到第一节
+        const first = data.value.chapters[0]
+        await pick(first.chars ? first.code : (first.sections[0]?.code || first.code))
+      }
     }
   } catch (e) {
     ElMessage.error(e.message)
