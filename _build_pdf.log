@@ -1,0 +1,175 @@
+
+up to date in 37s
+
+> ai-learning-assistant-frontend@1.0.0 build
+> vite build
+
+GODEBUG sys/cpu: unknown cpu feature "sha"
+[36mvite v5.4.21 [32mbuilding for production...[36m[39m
+transforming...
+[32m✓[39m 1716 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist/[22m[32mindex.html                 [39m[1m[2m    1.09 kB[22m[1m[22m[2m │ gzip:   0.66 kB[22m
+[2mdist/[22m[35massets/index-BKjp9-eW.css  [39m[1m[2m  392.04 kB[22m[1m[22m[2m │ gzip:  54.11 kB[22m
+[2mdist/[22m[36massets/index-DmwpHhxR.js   [39m[1m[33m1,192.46 kB[39m[22m[2m │ gzip: 397.06 kB[22m
+[33m
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+[32m✓ built in 8.61s[39m
+424 INFO: PyInstaller: 6.22.3, contrib hooks: 2026.8
+424 INFO: Python: 3.13.14
+476 INFO: Platform: Windows-10-10.0.19045-SP0
+476 INFO: Python environment: C:\Users\electric sheep\.workbuddy\binaries\python\envs\default
+479 INFO: wrote C:\Users\electric sheep\WorkBuddy\2026-10-14-16-38-01\ai-learning-assistant\build\AILearningAssistant.spec
+493 INFO: Removing temporary files and cleaning cache in C:\Users\electric sheep\AppData\Local\pyinstaller
+3069 INFO: Module search paths (PYTHONPATH):
+['C:\\Users\\electric '
+ 'sheep\\WorkBuddy\\2026-10-14-16-38-01\\ai-learning-assistant\\backend',
+ 'G:\\workbuddy\\resources\\app.asar.unpacked\\cli\\vendor\\shim',
+ 'C:\\Users\\electric '
+ 'sheep\\.workbuddy\\binaries\\python\\versions\\3.13.12\\python313.zip',
+ 'C:\\Users\\electric '
+ 'sheep\\.workbuddy\\binaries\\python\\versions\\3.13.12\\DLLs',
+ 'C:\\Users\\electric '
+ 'sheep\\.workbuddy\\binaries\\python\\versions\\3.13.12\\Lib',
+ 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\versions\\3.13.12',
+ 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default',
+ 'C:\\Users\\electric '
+ 'sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages',
+ 'C:\\Users\\electric '
+ 'sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\win32',
+ 'C:\\Users\\electric '
+ 'sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\win32\\lib',
+ 'C:\\Users\\electric '
+ 'sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\pythonwin',
+ 'C:\\Users\\electric '
+ 'sheep\\WorkBuddy\\2026-10-14-16-38-01\\ai-learning-assistant\\backend']
+4283 INFO: Appending 'datas' from .spec
+4287 INFO: checking Analysis
+4287 INFO: Building Analysis because Analysis-00.toc is non existent
+4287 INFO: Looking for Python shared library...
+4287 INFO: Using Python shared library: C:\Users\electric sheep\.workbuddy\binaries\python\versions\3.13.12\python313.dll
+4287 INFO: Running Analysis Analysis-00.toc
+4287 INFO: Target bytecode optimization level: 0
+4287 INFO: Initializing module dependency graph...
+4290 INFO: Initializing module graph hook caches...
+4310 INFO: Analyzing modules for base_library.zip ...
+7979 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+9184 INFO: Processing standard module hook 'hook-math.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+10474 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+11384 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+11915 INFO: Caching module dependency graph...
+11965 INFO: Analyzing C:\Users\electric sheep\WorkBuddy\2026-10-14-16-38-01\ai-learning-assistant\backend\launcher.py
+12303 INFO: Processing standard module hook 'hook-webbrowser.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+12356 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+12363 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+12373 INFO: Processing standard module hook 'hook-uvicorn.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+13915 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+14019 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+15258 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+15260 INFO: SetuptoolsInfo: initializing cached setuptools info...
+17430 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+17717 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+18062 INFO: Processing standard module hook 'hook-websockets.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+19495 INFO: Processing standard module hook 'hook-anyio.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+21694 INFO: Processing standard module hook 'hook-sqlite3.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+22936 INFO: Processing standard module hook 'hook-certifi.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+23329 INFO: Processing standard module hook 'hook-pygments.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+28144 INFO: Processing standard module hook 'hook-pydantic.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+29796 INFO: Processing standard module hook 'hook-zoneinfo.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+31190 INFO: Processing standard module hook 'hook-opentelemetry.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+32608 INFO: Processing standard module hook 'hook-xml.dom.domreg.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+32876 INFO: Processing standard module hook 'hook-PIL.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+32992 INFO: Processing standard module hook 'hook-PIL.Image.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+34092 INFO: Processing standard module hook 'hook-numpy.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+36403 INFO: Processing standard module hook 'hook-psutil.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+36788 INFO: Processing standard module hook 'hook-charset_normalizer.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+37158 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+37484 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+39355 INFO: Processing standard module hook 'hook-lxml.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+40414 INFO: Processing standard module hook 'hook-lxml.etree.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+42369 INFO: Processing pre-safe-import-module hook 'hook-importlib_resources.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+42407 INFO: Processing standard module hook 'hook-docx.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+45102 INFO: Analyzing hidden import 'uvicorn.loops.auto'
+45110 INFO: Analyzing hidden import 'uvicorn.protocols.http.auto'
+45112 INFO: Analyzing hidden import 'uvicorn.protocols.websockets.auto'
+45114 INFO: Analyzing hidden import 'uvicorn.lifespan.on'
+45122 INFO: Analyzing hidden import 'uvicorn.__main__'
+45123 INFO: Analyzing hidden import 'uvicorn.lifespan.off'
+45125 INFO: Analyzing hidden import 'uvicorn.loops.zuvloop'
+45128 INFO: Analyzing hidden import 'uvicorn.workers'
+45134 INFO: Processing module hooks (post-graph stage)...
+45275 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+45690 INFO: Processing standard module hook 'hook-lxml.isoschematron.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+45860 INFO: Processing pre-safe-import-module hook 'hook-tomli.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+45860 INFO: Setuptools: 'tomli' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.tomli'!
+45868 INFO: Processing standard module hook 'hook-setuptools.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+45886 INFO: Processing pre-safe-import-module hook 'hook-distutils.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+45925 INFO: Processing pre-safe-import-module hook 'hook-jaraco.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+45926 INFO: Setuptools: 'jaraco' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.jaraco'!
+45940 INFO: Processing pre-safe-import-module hook 'hook-more_itertools.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+45941 INFO: Setuptools: 'more_itertools' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.more_itertools'!
+46095 INFO: Processing standard module hook 'hook-_osx_support.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+46395 INFO: Processing standard module hook 'hook-setuptools._vendor.jaraco.text.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+46406 INFO: Processing pre-safe-import-module hook 'hook-backports.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+46407 INFO: Setuptools: 'backports' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.backports'!
+47469 INFO: Processing pre-safe-import-module hook 'hook-wheel.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+47470 INFO: Setuptools: 'wheel' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.wheel'!
+47841 WARNING: Hidden import "tzdata" not found!
+48169 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks'
+51139 INFO: Processing standard module hook 'hook-lxml.objectify.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+51154 INFO: Performing binary vs. data reclassification (62 entries)
+51185 INFO: Looking for ctypes DLLs
+51295 INFO: Analyzing run-time hooks ...
+51304 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+51308 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+51312 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+51315 INFO: Including run-time hook 'pyi_rth_setuptools.py' from 'C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+51347 INFO: Creating base_library.zip...
+51372 INFO: Looking for dynamic libraries
+54768 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\Users\\electric sheep\\.workbuddy\\binaries\\python\\envs\\default\\Lib\\site-packages\\numpy.libs']
+54768 INFO: Extra DLL search directories (PATH): []
+57099 INFO: Warnings written to C:\Users\electric sheep\WorkBuddy\2026-10-14-16-38-01\ai-learning-assistant\build\pyinstaller\AILearningAssistant\warn-AILearningAssistant.txt
+57246 INFO: Graph cross-reference written to C:\Users\electric sheep\WorkBuddy\2026-10-14-16-38-01\ai-learning-assistant\build\pyinstaller\AILearningAssistant\xref-AILearningAssistant.html
+57315 INFO: checking PYZ
+57315 INFO: Building PYZ because PYZ-00.toc is non existent
+57315 INFO: Building PYZ (ZlibArchive) C:\Users\electric sheep\WorkBuddy\2026-10-14-16-38-01\ai-learning-assistant\build\pyinstaller\AILearningAssistant\PYZ-00.pyz
+58715 INFO: Building PYZ (ZlibArchive) C:\Users\electric sheep\WorkBuddy\2026-10-14-16-38-01\ai-learning-assistant\build\pyinstaller\AILearningAssistant\PYZ-00.pyz completed successfully.
+58762 INFO: checking PKG
+58762 INFO: Building PKG because PKG-00.toc is non existent
+58762 INFO: Building PKG (CArchive) AILearningAssistant.pkg
+66657 INFO: Building PKG (CArchive) AILearningAssistant.pkg completed successfully.
+66662 INFO: Bootloader C:\Users\electric sheep\.workbuddy\binaries\python\envs\default\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\run.exe
+66662 INFO: checking EXE
+66663 INFO: Building EXE because EXE-00.toc is non existent
+66663 INFO: Building EXE from EXE-00.toc
+66663 INFO: Copying bootloader EXE to C:\Users\electric sheep\WorkBuddy\2026-10-14-16-38-01\ai-learning-assistant\release\AILearningAssistant.exe
+66677 INFO: Copying icon to EXE
+66688 INFO: Copying 0 resources to EXE
+66688 INFO: Embedding manifest in EXE
+66697 INFO: Appending PKG archive to EXE
+66727 INFO: Fixing EXE headers
+66909 INFO: Building EXE from EXE-00.toc completed successfully.
+66914 INFO: Build complete! The results are available in: C:\Users\electric sheep\WorkBuddy\2026-10-14-16-38-01\ai-learning-assistant\release
+[step] 安装前端依赖
+[step] 构建前端产物
+[note] 旧 frontend_dist 已挪到 _stale_frontend_dist_235fabfc（可整目录手动删除）
+[step] 前端产物已复制到 backend\frontend_dist
+[note] 已内置默认 AI key（2aLq********VL9n），分享包开箱即用；用 --no-embed-key 可关闭
+[note] 旧 exe 已挪到 build/_stale_exe（可整目录手动删除）
+[step] PyInstaller 打包后端为单文件 exe
+[note] 已把 backend/.env 复制到 release/.env（含 AI Key，注意分发范围）
+
+========================================================
+打包完成
+========================================================
+  发布目录：C:\Users\electric sheep\WorkBuddy\2026-10-14-16-38-01\ai-learning-assistant\release
+  可执行文件：AILearningAssistant.exe（46.0 MB）
+  双击 exe 即可运行；整个 release 文件夹可拷贝给他人使用
+========================================================
+
+分享压缩包已生成：四史学习助手-v1.0-便携版.zip（109.4 MB，16 个文件）
+  接收方解压后双击 exe 即可运行，无需安装任何环境

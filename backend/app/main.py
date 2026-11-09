@@ -1676,7 +1676,88 @@ def export_wrong_csv(
     return Response(
         content=content,
         media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+        headers={
+            # ASCII 回退名 + UTF-8 名：老下载器不认 filename* 时不至于变成无扩展名
+            "Content-Disposition": (
+                f"attachment; filename=wrongbook-{datetime.now():%Y%m%d}.csv; "
+                f"filename*=UTF-8''{quote(filename)}"
+            )
+        },
+    )
+
+
+def _find_cjk_font() -> str:
+    """找一款可用的中文 TTF（fpdf2 需要；TTC 集合不保险，只用单文件 TTF）。"""
+    for name in ("msyh.TTF", "msyh.ttf", "simhei.ttf", "Deng.ttf"):
+        p = Path("C:/Windows/Fonts") / name
+        if p.exists():
+            return str(p)
+    raise HTTPException(500, "未找到系统中文字体，无法生成 PDF")
+
+
+@app.get("/api/wrong-book/export/pdf")
+def export_wrong_pdf(
+    only_unresolved: bool = False,
+    token: str = "",
+    authorization: str = Header(default=""),
+):
+    """服务端直接生成 PDF（移动端浏览器没有「打印为 PDF」，Ctrl+P 方案只适用桌面）。"""
+    from fpdf import FPDF
+
+    uid = _uid_flexible(authorization, token)
+    rows = _wrong_rows(uid, only_unresolved)
+    username = db().execute("SELECT username FROM users WHERE id=?", (uid,)).fetchone()["username"]
+    title = "错题（未掌握）" if only_unresolved else "错题本（全部）"
+
+    pdf = FPDF(format="A4")
+    pdf.set_auto_page_break(auto=True, margin=18)
+    pdf.add_font("cjk", "", _find_cjk_font())
+    pdf.set_margins(16, 16, 16)
+    pdf.add_page()
+
+    pdf.set_font("cjk", size=18)
+    pdf.cell(0, 10, title, new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("cjk", size=10)
+    pdf.set_text_color(130, 130, 130)
+    pdf.cell(
+        0,
+        7,
+        f"{username} · 共 {len(rows)} 题 · 导出时间 {datetime.now():%Y-%m-%d %H:%M}",
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+    pdf.ln(4)
+
+    for i, r in enumerate(rows, 1):
+        # 卡片底色，防跨页文字粘连时看不出边界
+        pdf.set_fill_color(245, 247, 250)
+        pdf.set_text_color(30, 30, 30)
+        pdf.set_font("cjk", size=12)
+        marked = "　★ 重点" if r["review_marked"] else ""
+        pdf.multi_cell(0, 7, f"{i}. {r['question']}{marked}", fill=True, new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("cjk", size=10)
+        pdf.set_text_color(140, 140, 140)
+        pdf.multi_cell(
+            0, 6, f"{r['kp_title'] or '未关联'} · 错 {r['wrong_count']} 次",
+            fill=True, new_x="LMARGIN", new_y="NEXT",
+        )
+        pdf.set_text_color(42, 110, 42)
+        pdf.multi_cell(0, 6, f"答：{r['answer']}", fill=True, new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(210, 210, 210)
+        pdf.set_line_width(0.2)
+        pdf.line(16, pdf.get_y() + 2, 194, pdf.get_y() + 2)
+        pdf.ln(5)
+
+    filename = f"错题本-{datetime.now():%Y%m%d}.pdf"
+    return Response(
+        content=bytes(pdf.output()),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename=wrongbook-{datetime.now():%Y%m%d}.pdf; "
+                f"filename*=UTF-8''{quote(filename)}"
+            )
+        },
     )
 
 

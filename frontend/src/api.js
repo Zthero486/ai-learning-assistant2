@@ -173,8 +173,16 @@ export default {
   // 今日复习队列（FSRS 排期到期的错题）
   reviewDue: (limit = 20) => request(`/api/review/due?limit=${limit}`),
   updateWrong: (id, body) => request(`/api/wrong-book/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
-  exportWrongCsv: (onlyUnresolved = false) =>
-    downloadFile(`/api/wrong-book/export/csv?only_unresolved=${onlyUnresolved}`, `错题本-${new Date().toISOString().slice(0, 10)}.csv`),
+  // 直接跳转下载：Content-Disposition 的真文件名在平板等移动端下载管理器里才生效
+  // （fetch+blob 的 a.download 属性会被移动端忽略，落成 UUID.txt）
+  exportWrongCsv: (onlyUnresolved = false) => {
+    window.location.href = `/api/wrong-book/export/csv?only_unresolved=${onlyUnresolved}&token=${encodeURIComponent(auth.token())}`
+    return Promise.resolve()
+  },
+  exportWrongPdf: (onlyUnresolved = false) => {
+    window.location.href = `/api/wrong-book/export/pdf?only_unresolved=${onlyUnresolved}&token=${encodeURIComponent(auth.token())}`
+    return Promise.resolve()
+  },
   openWrongPrint: (onlyUnresolved = false) =>
     window.open(`/api/wrong-book/print?token=${encodeURIComponent(auth.token())}&only_unresolved=${onlyUnresolved}`, '_blank'),
   // 全局搜索

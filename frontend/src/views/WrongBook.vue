@@ -18,7 +18,7 @@
             AI 出同类题
           </el-button>
           <el-button size="small" @click="doExportCsv" :loading="exporting">导出 CSV</el-button>
-          <el-button size="small" @click="doPrint">导出 PDF</el-button>
+          <el-button size="small" @click="doExportPdf" :loading="exportingPdf">导出 PDF</el-button>
         </div>
       </div>
     </template>
@@ -117,6 +117,7 @@ const dueCount = ref(0)
 const view = ref('all')
 const onlyUnresolved = ref(true)
 const exporting = ref(false)
+const exportingPdf = ref(false)
 const gening = ref(false)
 
 // ---------- 分组 + 折叠 ----------
@@ -234,9 +235,17 @@ async function doExportCsv() {
   }
 }
 
-function doPrint() {
-  api.openWrongPrint(false)
-  ElMessage.info('已在新标签页打开，按 Ctrl+P 选择「另存为 PDF」')
+// 服务端直接生成 PDF，桌面/平板都能直接下载
+async function doExportPdf() {
+  exportingPdf.value = true
+  try {
+    await api.exportWrongPdf(false)
+    ElMessage.success('PDF 已开始下载')
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    exportingPdf.value = false
+  }
 }
 
 async function markReview(w) {

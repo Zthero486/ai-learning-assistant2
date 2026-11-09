@@ -562,6 +562,34 @@
         "422"
       ]
     },
+    "GET /api/wrong-book/export/pdf": {
+      "operation_id": "export_wrong_pdf_api_wrong_book_export_pdf_get",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "query",
+          "name": "only_unresolved",
+          "required": false,
+          "schema": "boolean"
+        },
+        {
+          "in": "query",
+          "name": "token",
+          "required": false,
+          "schema": "string"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
     "GET /api/wrong-book/print": {
       "operation_id": "print_wrong_book_api_wrong_book_print_get",
       "params": [
