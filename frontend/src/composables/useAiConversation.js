@@ -21,6 +21,9 @@ export const TOOL_LABEL = {
   create_task: '建复习任务',
   create_event: '补时间轴',
   tag_wrong_error: '标注错因',
+  save_memory: '沉淀记忆',
+  list_memory: '查记忆库',
+  __review__: '质量自查',
 }
 
 // AI 动作 → 页面：写入类工具完成后顺势带学生去对应板块
@@ -101,10 +104,27 @@ export function useAiConversation(o) {
                   o.onNavigated?.(target)
                 }
               }
+            } else if (ev.type === 'state' && ev.state === 'review') {
+              // 状态机进入审查：亮一张「自查中」卡片
+              reply.steps.push({ tool: '__review__', summary: '正在自查结果是否满足要求…', ok: null })
+            } else if (ev.type === 'state' && ev.state === 'act' && ev.reason) {
+              // 审查不达标回流：把自查卡片标黄并写明缺口，继续执行
+              for (let i = reply.steps.length - 1; i >= 0; i--) {
+                if (reply.steps[i].tool === '__review__' && reply.steps[i].ok === null) {
+                  reply.steps[i].summary = `自查未达标（${ev.reason}），继续执行`
+                  reply.steps[i].ok = true
+                  break
+                }
+              }
             } else if (ev.type === 'error') {
               reply.content = `⚠ ${ev.message}`
               reply.pending = false
             } else if (ev.type === 'done') {
+              // 还挂着的自查卡片 = 审查通过收尾
+              for (const s of reply.steps) {
+                if (s.tool === '__review__' && s.ok === null) s.summary = '自查通过'
+                if (s.ok === null) s.ok = true
+              }
               reply.content = ev.reply || reply.content || '（AI 没有返回内容，换个说法再问一次试试）'
               reply.pending = false
               // 出完题统一带路：人已在自测页也要触发，所以 query 每次都变

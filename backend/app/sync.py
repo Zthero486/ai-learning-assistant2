@@ -22,6 +22,7 @@ CHAIN = (
     "wrong_book",
     "tasks",
     "events",
+    "user_memory",
 )
 
 PAYLOAD_VERSION = 1
@@ -88,6 +89,11 @@ def build_export(conn: sqlite3.Connection) -> dict:
             FROM events e
             JOIN users u ON u.id = e.user_id
             LEFT JOIN knowledge_points k ON k.id = e.kp_id"""),
+        "user_memory": rows("""
+            SELECT m.uuid, u.uuid AS owner, m.kind, m.content, m.source,
+                   m.created_at, m.updated_at
+            FROM user_memory m
+            JOIN users u ON u.id = m.user_id"""),
     }
     payload["counts"] = {k: len(v) for k, v in payload.items() if isinstance(v, list)}
     return payload
@@ -361,6 +367,25 @@ def apply_import(conn: sqlite3.Connection, payload: dict) -> dict:
             ),
         )
         stats["events"] += 1
+
+    # 9. user_memory（AI 用户画像/偏好/薄弱点记忆）
+    for r in payload.get("user_memory", []):
+        if not r.get("uuid") or uuid_exists("user_memory", r["uuid"]):
+            continue
+        conn.execute(
+            "INSERT OR IGNORE INTO user_memory(user_id,uuid,kind,content,source,"
+            "created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+            (
+                resolve_user(r["owner"]),
+                r["uuid"],
+                r.get("kind", "profile"),
+                r.get("content", ""),
+                r.get("source", "agent"),
+                r.get("created_at", ""),
+                r.get("updated_at", r.get("created_at", "")),
+            ),
+        )
+        stats["user_memory"] += 1
 
     conn.commit()
     conn.execute("PRAGMA foreign_keys=ON")

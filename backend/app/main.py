@@ -184,6 +184,18 @@ def init_db() -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_events_year ON events(user_id, year);
         CREATE INDEX IF NOT EXISTS idx_events_era ON events(user_id, era);
+        CREATE TABLE IF NOT EXISTS user_memory(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
+            uuid TEXT,
+            kind TEXT NOT NULL DEFAULT 'profile',
+            content TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'agent',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(user_id, kind, content)
+        );
+        CREATE INDEX IF NOT EXISTS idx_memory_user ON user_memory(user_id, updated_at);
         """)
     conn.commit()
     # 顺序：先补 uuid 列（demo 插入要用）→ 保证 users.id=1 → 再做 user_id 迁移
@@ -242,6 +254,7 @@ USER_TABLES = (
     "practice_records",
     "wrong_book",
     "events",
+    "user_memory",
 )
 
 
@@ -2320,6 +2333,30 @@ async def ai_transcribe(file: UploadFile = File(...), uid: int = Depends(require
     except Exception as e:
         raise HTTPException(502, f"语音识别失败：{e}")
     return {"text": text}
+
+
+@app.get("/api/memory")
+def memory_list(uid: int = Depends(require_user)):
+    """AI 记忆库：Agent 沉淀的学生画像/偏好/薄弱点/计划，供复习建议个性化。"""
+    conn = db()
+    rows = conn.execute(
+        "SELECT id, kind, content, source, created_at, updated_at FROM user_memory "
+        "WHERE user_id=? ORDER BY updated_at DESC LIMIT 200",
+        (uid,),
+    ).fetchall()
+    conn.close()
+    return {"items": [dict(r) for r in rows]}
+
+
+@app.delete("/api/memory/{mid}")
+def memory_delete(mid: int, uid: int = Depends(require_user)):
+    conn = db()
+    cur = conn.execute("DELETE FROM user_memory WHERE id=? AND user_id=?", (mid, uid))
+    conn.commit()
+    conn.close()
+    if cur.rowcount == 0:
+        raise HTTPException(404, "没有这条记忆")
+    return {"deleted": cur.rowcount}
 
 
 @app.get("/api/lan")

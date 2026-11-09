@@ -107,6 +107,24 @@
         </div>
         <pre v-if="weakResult" class="ai-output">{{ weakResult }}</pre>
       </el-card>
+
+      <el-card class="page-card">
+        <template #header>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span>AI 记忆（用户画像）</span>
+            <el-button size="small" text @click="loadMemory">刷新</el-button>
+          </div>
+        </template>
+        <div class="muted" style="font-size:12px;margin-bottom:8px">
+          AI 对话中沉淀的长期信息（考试时间、偏好、薄弱点、约定），每次对话自动带上，让复习建议更贴合你。
+        </div>
+        <el-empty v-if="!memory.length" description="还没有记忆，和 AI 多聊聊就会出现" :image-size="60" />
+        <div v-for="m in memory" :key="m.id" class="mem-item">
+          <el-tag size="small" effect="plain" :type="MEM_TAG[m.kind] || 'info'">{{ MEM_NAME[m.kind] || m.kind }}</el-tag>
+          <span class="mem-content">{{ m.content }}</span>
+          <el-button size="small" text type="danger" @click="delMemory(m.id)">删</el-button>
+        </div>
+      </el-card>
     </el-col>
   </el-row>
 </template>
@@ -218,7 +236,21 @@ async function checkConnection() {
   }
 }
 
-onMounted(loadStatus)
+// ---- AI 记忆 ----
+const memory = ref([])
+const MEM_NAME = { profile: '画像', preference: '偏好', weakness: '薄弱', plan: '计划' }
+const MEM_TAG = { profile: 'primary', preference: 'success', weakness: 'danger', plan: 'warning' }
+async function loadMemory() {
+  try {
+    memory.value = (await api.memoryList()).items || []
+  } catch { /* 静默 */ }
+}
+async function delMemory(id) {
+  await api.memoryDelete(id)
+  ElMessage.success('已删除')
+  await loadMemory()
+}
+onMounted(() => { loadStatus(); loadMemory() })
 
 const ask = ref({ question: '', material_id: '' })
 const askLoading = ref(false)
@@ -285,4 +317,7 @@ async function doWeak() {
   padding: 12px;
   margin-top: 10px;
 }
+.mem-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px dashed #ebeef5; font-size: 13px; }
+.mem-item:last-child { border-bottom: none; }
+.mem-content { flex: 1; line-height: 1.5; }
 </style>

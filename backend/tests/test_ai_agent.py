@@ -28,8 +28,8 @@ def party_ctx(client):
 def test_工具数量与权限划分():
     read_only = ai_agent.tool_specs(False)
     full = ai_agent.tool_specs(True)
-    assert len(read_only) == 9
-    assert len(full) == 15
+    assert len(read_only) == 10
+    assert len(full) == 17
     assert all(t["function"]["name"] not in {x["function"]["name"] for x in read_only}
                for t in full if t not in read_only)
     assert all(not t["write"] for t in ai_agent.TOOLS.values() if t["spec"] in read_only)
@@ -125,8 +125,8 @@ def test_未选课时对话接口报错():
 def test_工具清单接口(client):
     client.post("/api/profile/track", json={"track": "party"})
     data = client.get("/api/ai/tools").json()
-    assert len(data["tools"]) == 15
-    assert sum(1 for t in data["tools"] if t["write"]) == 6
+    assert len(data["tools"]) == 17
+    assert sum(1 for t in data["tools"] if t["write"]) == 7
 
 
 def _wrong_id(client) -> int:
@@ -173,3 +173,26 @@ def test_错因归因的边界(client):
     ro = ai_agent.execute_tool(ctx, "tag_wrong_error",
                                {"wrong_id": wid, "error_type": "concept"}, allow_write=False)
     assert ro["ok"] is False and "写入权限" in ro["error"]
+
+
+def test_记忆沉淀与查重(party_ctx):
+    ctx, _ = party_ctx
+    r1 = ai_agent.execute_tool(ctx, "save_memory",
+                               {"kind": "weakness", "content": "时序题反复错"}, allow_write=True)
+    assert r1["ok"] and "duplicated" not in r1
+    r2 = ai_agent.execute_tool(ctx, "save_memory",
+                               {"kind": "weakness", "content": "时序题反复错"}, allow_write=True)
+    assert r2["duplicated"] is True
+    # 非法 kind 拒绝
+    bad = ai_agent.execute_tool(ctx, "save_memory",
+                                {"kind": "other", "content": "x"}, allow_write=True)
+    assert bad["ok"] is False
+    items = ai_agent.execute_tool(ctx, "list_memory", {}, allow_write=True)
+    assert items["ok"] and any("时序题反复错" in i["content"] for i in items["items"])
+
+
+def test_记忆只读模式不可写(party_ctx):
+    ctx, _ = party_ctx
+    r = ai_agent.execute_tool(ctx, "save_memory",
+                              {"kind": "profile", "content": "大三"}, allow_write=False)
+    assert r["ok"] is False and "写入权限" in r["error"]

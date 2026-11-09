@@ -200,6 +200,9 @@ export default {
   aiAsk: (body) => request('/api/ai/ask', { method: 'POST', body: JSON.stringify(body) }),
   aiWeakAnalysis: (body) => request('/api/ai/weak-analysis', { method: 'POST', body: JSON.stringify(body) }),
   aiTools: () => request('/api/ai/tools'),
+  // AI 记忆（用户画像）
+  memoryList: () => request('/api/memory'),
+  memoryDelete: (id) => request(`/api/memory/${id}`, { method: 'DELETE' }),
   // AI 对话窗口（Agent）：onEvent 收 SSE 事件
   aiChat: (payload, handlers) => streamChat(payload, handlers),
   // 跨机同步

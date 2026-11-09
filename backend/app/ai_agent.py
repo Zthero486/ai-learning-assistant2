@@ -2,10 +2,12 @@
 """AI 学习代理（v3）：让软件里配置的大模型**真正能操作软件**。
 
 设计要点
-- 工具即权限边界：模型只能调用本文件 `TOOLS` 里登记的 13 个函数，读写都强制带
+- 工具即权限边界：模型只能调用本文件 `TOOLS` 里登记的 17 个函数，读写都强制带
   `user_id`，写入的 node_code 必须落在当前选中的那一门课里。
 - 不提供任何删除类工具：AI 可以新建、补充，但不能删学生的数据。
-- 只读工具（8 个）任何情况下都开；写入工具（5 个）受 `allow_write` 开关控制。
+- 只读工具（10 个）任何情况下都开；写入工具（7 个）受 `allow_write` 开关控制。
+- 运行是显式状态机：act（模型+工具）→ review（质检员判定达标与否）→
+  不达标回流 act（最多 2 次）→ finalize 出结论，防止「做一半就说完成」。
 - 多轮 tool-calling 循环有硬上限（轮数 6 / 调用 16），防止模型打转烧额度。
 - 所有工具返回值为 dict，出错也返回 dict（不抛异常打断对话），便于模型自我纠正。
 
@@ -14,6 +16,7 @@
 """
 
 import json
+import re
 import sqlite3
 import uuid
 from datetime import datetime, timedelta
@@ -23,6 +26,7 @@ from . import ai_helper, qushi
 
 MAX_ROUNDS = 8          # 一次对话最多几轮「模型→工具→模型」（学整章这类长任务 6 轮不够）
 MAX_TOOL_CALLS = 20     # 一次对话最多执行多少次工具
+MAX_REVIEWS = 2         # 质量审查不达标最多回流几次，防审查-回流死循环
 MAX_TOOL_RESULT = 3000  # 单个工具结果回灌给模型的字符上限
 MAX_MATERIAL_CHARS = 20000   # AI 生成资料入库的字数上限
 MAX_QUESTIONS_PER_CALL = 10
@@ -51,6 +55,7 @@ WRITE_BUDGETS = {
     "create_task": 5,
     "create_material": 2,
     "create_event": 2,
+    "save_memory": 3,
 }
 
 EXAM_TYPES = {
@@ -631,6 +636,76 @@ def _tool_tag_wrong_error(ctx: AgentContext, args: dict) -> dict:
     }
 
 
+# ==================== 用户画像 / 长期记忆 ====================
+# kind 取值：profile 画像（年级/考试时间等）、preference 偏好、weakness 薄弱点、plan 计划
+MEMORY_KINDS = {
+    "profile": "学生画像（年级、专业、考试时间等基本盘）",
+    "preference": "学习偏好（喜欢的讲解方式、出题类型等）",
+    "weakness": "薄弱点（反复出错的知识块）",
+    "plan": "计划与约定（答应学生的复习安排等）",
+}
+
+
+def _tool_save_memory(ctx: AgentContext, args: dict) -> dict:
+    """沉淀一条长期记忆，刻画用户画像，后续对话自动注入 system prompt。"""
+    kind = (args.get("kind") or "profile").strip().lower()
+    content = (args.get("content") or "").strip()
+    if kind not in MEMORY_KINDS:
+        return {"ok": False, "error": f"kind 只能取 {list(MEMORY_KINDS.keys())} 之一"}
+    if not content:
+        return {"ok": False, "error": "content 必填（一句话，300 字以内）"}
+    content = content[:300]
+    conn = ctx.conn()
+    try:
+        row = conn.execute(
+            "SELECT id FROM user_memory WHERE user_id=? AND kind=? AND content=?",
+            (ctx.uid, kind, content),
+        ).fetchone()
+        if row:
+            conn.execute(
+                "UPDATE user_memory SET updated_at=? WHERE id=?",
+                (ctx.now(), row["id"]),
+            )
+            conn.commit()
+            return {"ok": True, "id": row["id"], "duplicated": True,
+                    "message": "这条记忆已有，已刷新时间"}
+        conn.execute(
+            "INSERT INTO user_memory(user_id,uuid,kind,content,source,created_at,updated_at)"
+            " VALUES(?,?,?,?,?,?,?)",
+            (ctx.uid, uuid.uuid4().hex, kind, content, "agent", ctx.now(), ctx.now()),
+        )
+        conn.commit()
+        n = conn.execute(
+            "SELECT COUNT(*) AS n FROM user_memory WHERE user_id=?", (ctx.uid,)
+        ).fetchone()["n"]
+    finally:
+        conn.close()
+    return {"ok": True, "message": f"已记住（{MEMORY_KINDS[kind]}），当前共 {n} 条"}
+
+
+def _tool_list_memory(ctx: AgentContext, args: dict) -> dict:
+    """查看已沉淀的记忆（按更新时间倒序）。"""
+    kind = (args.get("kind") or "").strip().lower()
+    limit = min(max(_as_int(args.get("limit")) or 20, 1), 50)
+    conn = ctx.conn()
+    try:
+        if kind:
+            rows = conn.execute(
+                "SELECT id, kind, content, updated_at FROM user_memory "
+                "WHERE user_id=? AND kind=? ORDER BY updated_at DESC LIMIT ?",
+                (ctx.uid, kind, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, kind, content, updated_at FROM user_memory "
+                "WHERE user_id=? ORDER BY updated_at DESC LIMIT ?",
+                (ctx.uid, limit),
+            ).fetchall()
+    finally:
+        conn.close()
+    return {"ok": True, "items": [dict(r) for r in rows]}
+
+
 def _tool_create_event(ctx: AgentContext, args: dict) -> dict:
     title = (args.get("title") or "").strip()
     year = _as_int(args.get("year"))
@@ -803,6 +878,21 @@ TOOLS = {
               ["title", "year"], write=True),
         fn=_tool_create_event,
     ),
+    "save_memory": dict(
+        _spec("save_memory",
+              "把值得长期记住的学生信息存入记忆库（刻画用户画像，之后每次对话自动带上）。"
+              "适合记：考试时间、专业背景、偏好、反复暴露的薄弱点、答应过的安排。"
+              "只记稳定信息，不要把一次性的聊天内容存进来。",
+              {"kind": _S("profile(画像)/preference(偏好)/weakness(薄弱点)/plan(计划)"),
+               "content": _S("一句话记忆，300 字以内")},
+              ["kind", "content"], write=True),
+        fn=_tool_save_memory,
+    ),
+    "list_memory": dict(
+        _spec("list_memory", "查看已存的学生记忆（画像/偏好/薄弱点/计划），制定复习计划前先看看。",
+              {"kind": _S("可选：按类型过滤"), "limit": _I("最多返回几条，默认 20")}),
+        fn=_tool_list_memory,
+    ),
 }
 
 
@@ -832,12 +922,6 @@ def execute_tool(ctx: AgentContext, name: str, args: dict, allow_write: bool) ->
     return result
 
 
-def _today_line() -> str:
-    """提示词里的今天：让模型能自己算「明天/下周」。"""
-    now = datetime.now()
-    return f"{now:%Y-%m-%d} 星期{weekdays[now.weekday()]}"
-
-
 _WEEKDAYS = "一二三四五六日"
 
 
@@ -845,6 +929,26 @@ def _today_line() -> str:
     """提示词里的今天：让模型能自己算「明天/下周」。"""
     now = datetime.now()
     return f"{now:%Y-%m-%d} 星期{_WEEKDAYS[now.weekday()]}"
+
+
+def _memory_line(ctx: AgentContext) -> str:
+    """把已沉淀的用户画像注入 system prompt（最多 10 条，防 prompt 膨胀）。"""
+    try:
+        conn = ctx.conn()
+        rows = conn.execute(
+            "SELECT kind, content FROM user_memory WHERE user_id=? "
+            "ORDER BY updated_at DESC LIMIT 10",
+            (ctx.uid,),
+        ).fetchall()
+        conn.close()
+    except Exception:
+        return ""
+    if not rows:
+        return ""
+    items = "\n".join(f"- [{MEMORY_KINDS.get(r['kind'], r['kind'])[:4]}] {r['content']}" for r in rows)
+    return (f"\n已记住的学生信息（画像/偏好/薄弱点/计划，给建议时优先贴合）：\n{items}\n"
+            "若对话中出现了新的稳定信息（考试时间、明显薄弱的知识块、明确偏好），"
+            "顺手用 save_memory 沉淀一条；不要重复记录已有的。")
 
 
 def system_prompt(ctx: AgentContext) -> str:
@@ -864,6 +968,8 @@ def system_prompt(ctx: AgentContext) -> str:
 10. 学生要求处理**当前课程以外**的内容（比如你在教《党史》他却要新中国史的知识点/题目）：**不要借当前课程的名义写入**，直接提醒他到软件右上角「切换课程」再回来找你，一次说清即可。
 11. 你能直接操控界面：学生说「切到史料笔记/打开错题本/带我去自测」就调 navigate；写完知识点、题目、任务、资料后主动调 navigate 把学生带到对应页面（知识点→/knowledge，题目→/practice，任务→/tasks，资料→/materials，事件→/timeline），并在答复里说「已经帮你切过去了」。
 12. **出题只入库、不在聊天里做题**：调完 create_questions 后，最终答复**只说生成了几道题、覆盖什么考点**，绝不要把题目题干、选项、答案罗列进对话——界面会自动跳到自测页并直接开始作答，作答数据自动进错题本。聊天里贴题会把学生困在对话里做题，数据不落库，是严重错误。
+13. 收到「【质量审查】」提示时，说明你上一稿被判没达标：只针对缺口补齐（可以再用工具），不要推翻已完成的有效工作，补完重新总结收尾。
+14. 对话中出现值得长期记住的学生信息（考试时间、专业背景、反复暴露的薄弱块、明确偏好），顺手调 save_memory 沉淀；已有的信息不要重复存。
 
 内容要求：
 - 口径必须符合权威简史（《百年奋斗重大成就和历史经验的决议》、四本官方简史、二十大报告），重大年份、会议、文件名称不得写错。
@@ -872,7 +978,7 @@ def system_prompt(ctx: AgentContext) -> str:
 - 回答用中文，先给结论，再分点展开；不超过 500 字，需要长文时先给框架。
 
 当前课程：{ctx.track_name}（track={ctx.track}）。章节 code 形如 {ctx.track}-03-02，写入必须用真实的节 code。
-今天是 {_today_line()}。学生说「明天/下周/这几天」这类相对日期时，先换算成具体日期再调工具。{f"\n学生此刻在「{ctx.page_context}」功能页内和你对话，回答尽量贴合这个场景（比如在自测页就多谈做题安排，在任务页就围绕复习计划）；他的指令若与页面相关，优先直接执行并顺势 navigate。" if ctx.page_context else ""}"""
+今天是 {_today_line()}。学生说「明天/下周/这几天」这类相对日期时，先换算成具体日期再调工具。{_memory_line(ctx)}{f"\n学生此刻在「{ctx.page_context}」功能页内和你对话，回答尽量贴合这个场景（比如在自测页就多谈做题安排，在任务页就围绕复习计划）；他的指令若与页面相关，优先直接执行并顺势 navigate。" if ctx.page_context else ""}"""
 
 
 def _force_final(convo: list) -> str:
@@ -895,10 +1001,43 @@ def _force_final(convo: list) -> str:
         return ""
 
 
+def _review_draft(user_goal: str, steps: list, draft: str) -> dict:
+    """质检员：独立一次大模型调用，判断草稿答复是否已满足学生请求。
+
+    返回 {"done": bool, "gap": str}。解析失败/调用失败一律按达标放行——
+    审查是增强项，绝不能因为它把主流程卡死。
+    """
+    step_lines = "\n".join(f"- {s['tool']}：{s['summary']}" for s in steps[-12:]) or "（未调用工具）"
+    judge = [
+        {"role": "system", "content": (
+            "你是学习助手的质检员。判断助教的答复是否已满足学生的请求。"
+            "只输出一个 JSON 对象：{\"done\": true 或 false, \"gap\": \"没做到的点，一句话\"}。"
+            "判定标准宁可宽松：史实答对、学生点名的动作（写入/建任务/出题等）确实执行了就算达标；"
+            "格式瑕疵、措辞差异不算不达标。")},
+        {"role": "user", "content":
+            f"学生请求：{user_goal}\n\n已执行步骤：\n{step_lines}\n\n拟答复：\n{draft[:1200]}"},
+    ]
+    try:
+        msg = ai_helper.chat_completion(judge, tools=None)
+        text = (msg.get("content") or "").strip()
+        m = re.search(r"\{.*\}", text, re.S)
+        data = json.loads(m.group(0)) if m else {}
+        return {"done": bool(data.get("done", True)), "gap": str(data.get("gap", ""))[:300]}
+    except Exception:
+        return {"done": True, "gap": ""}
+
+
 def run_events(ctx: AgentContext, messages: list, allow_write: bool = True):
     """生成器：边跑边吐事件，最后一个事件是 {"type":"done", ...}。
 
+    状态机（类 OpenClaw 的「感知→行动→审查→回流」）：
+        plan/act  ：模型带着工具自主执行（一轮或多轮「模型→工具→模型」）
+        review    ：模型停止调工具后，质检员独立判定答复是否满足请求
+        act(回流) ：不达标且还有预算 → 把审查意见作为新一轮输入，回到 act
+        finalize  ：达标 / 审查次数用尽 / 轮次用尽 → 出最终答复
+
     事件类型：
+    - state     ：状态机切换（state=act/review，reason=回流原因）
     - step/start：开始调某个工具（前端先亮一张「正在检索史料」的卡片）
     - step/end  ：工具跑完（带 ok、一行 summary、完整 detail）
     - error     ：大模型调用失败
@@ -906,6 +1045,11 @@ def run_events(ctx: AgentContext, messages: list, allow_write: bool = True):
     """
     specs = tool_specs(allow_write)
     convo = [{"role": "system", "content": system_prompt(ctx)}]
+    # 学生最近一条请求：审查员要以它为基准判定达标与否
+    user_goal = next(
+        (m["content"] for m in reversed(messages) if m.get("role") == "user" and m.get("content")),
+        "",
+    )[:1500]
     for m in messages[-12:]:
         role = m.get("role")
         content = (m.get("content") or "").strip()
@@ -914,7 +1058,9 @@ def run_events(ctx: AgentContext, messages: list, allow_write: bool = True):
 
     steps = []
     used = 0
+    reviews = 0
     failures: dict = {}  # (tool, 参数) -> 上次失败原因：原样重试没有意义，直接短路
+    yield {"type": "state", "state": "act"}
     for round_no in range(1, MAX_ROUNDS + 1):
         try:
             msg = ai_helper.chat_completion(convo, tools=specs)
@@ -929,8 +1075,26 @@ def run_events(ctx: AgentContext, messages: list, allow_write: bool = True):
             text = (msg.get("content") or "").strip()
             if not text:
                 text = _force_final(convo)
+            # ---- REVIEW：动过工具才有审查价值（纯问答直接放行，省一次调用）----
+            if used > 0 and reviews < MAX_REVIEWS:
+                reviews += 1
+                yield {"type": "state", "state": "review", "round": reviews}
+                verdict = _review_draft(user_goal, steps, text)
+                if not verdict["done"]:
+                    yield {"type": "state", "state": "act", "reason": verdict["gap"],
+                           "review": reviews}
+                    convo.append({"role": "assistant", "content": text})
+                    convo.append({
+                        "role": "user",
+                        "content": (f"【质量审查】你上一稿没有完全满足学生的请求，缺口：{verdict['gap']}。"
+                                    "请继续完成目标（可以再用工具），完成后重新总结，"
+                                    "不要重复已经做过的事。"),
+                    })
+                    continue
+            # ---- FINALIZE ----
+            yield {"type": "state", "state": "finalize"}
             yield {"type": "done", "reply": text, "steps": steps,
-                   "rounds": round_no, "tool_calls": used}
+                   "rounds": round_no, "tool_calls": used, "reviews": reviews}
             return
 
         convo.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
@@ -974,6 +1138,7 @@ def run_events(ctx: AgentContext, messages: list, allow_write: bool = True):
 
     # 轮次用尽：不许再调工具，强制模型收尾给结论——否则学生只看到一堆工具卡片没答案
     reply = _force_final(convo)
+    yield {"type": "state", "state": "finalize"}
     yield {"type": "done",
            "reply": reply or "（工具调用轮次用尽，先把上面已经写入的结果用起来；"
                              "要更细的任务请拆成小问题再问一次。）",

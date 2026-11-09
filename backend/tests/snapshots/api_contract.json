@@ -66,6 +66,28 @@
         "422"
       ]
     },
+    "DELETE /api/memory/{mid}": {
+      "operation_id": "memory_delete_api_memory__mid__delete",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
+        },
+        {
+          "in": "path",
+          "name": "mid",
+          "required": true,
+          "schema": "integer"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
     "DELETE /api/tasks/{tid}": {
       "operation_id": "delete_task_api_tasks__tid__delete",
       "params": [
@@ -264,6 +286,22 @@
           "name": "mid",
           "required": true,
           "schema": "integer"
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        "200",
+        "422"
+      ]
+    },
+    "GET /api/memory": {
+      "operation_id": "memory_list_api_memory_get",
+      "params": [
+        {
+          "in": "header",
+          "name": "authorization",
+          "required": false,
+          "schema": "string"
         }
       ],
       "request_body": null,
