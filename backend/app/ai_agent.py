@@ -1727,6 +1727,17 @@ def _today_line() -> str:
     return f"{now:%Y-%m-%d} 星期{_WEEKDAYS[now.weekday()]}"
 
 
+def _page_context_line(ctx: AgentContext) -> str:
+    """学生所在功能页的提示词片段（抽出为函数，避免 f-string 内含反斜杠，兼容 py3.11）。"""
+    if not ctx.page_context:
+        return ""
+    return (
+        "\n学生此刻在「" + ctx.page_context + "」功能页内和你对话，回答尽量贴合这个场景"
+        "（比如在自测页就多谈做题安排，在任务页就围绕复习计划）；"
+        "他的指令若与页面相关，优先直接执行并顺势 navigate。"
+    )
+
+
 def _memory_line(ctx: AgentContext) -> str:
     """把已沉淀的用户画像注入 system prompt（最多 10 条，防 prompt 膨胀）。"""
     try:
@@ -1792,7 +1803,7 @@ def system_prompt(ctx: AgentContext) -> str:
 - 回答用中文，先给结论，再分点展开；不超过 500 字，需要长文时先给框架。
 
 当前课程：{ctx.track_name}（track={ctx.track}）。章节 code 形如 {ctx.track}-03-02，写入必须用真实的节 code。
-今天是 {_today_line()}。学生说「明天/下周/这几天」这类相对日期时，先换算成具体日期再调工具。{_memory_line(ctx)}{f"\n学生此刻在「{ctx.page_context}」功能页内和你对话，回答尽量贴合这个场景（比如在自测页就多谈做题安排，在任务页就围绕复习计划）；他的指令若与页面相关，优先直接执行并顺势 navigate。" if ctx.page_context else ""}"""
+今天是 {_today_line()}。学生说「明天/下周/这几天」这类相对日期时，先换算成具体日期再调工具。{_memory_line(ctx)}{_page_context_line(ctx)}"""
 
 
 def _force_final(convo: list) -> str:
