@@ -18,6 +18,7 @@
       </div>
 
       <div v-if="loading" class="gs-empty">搜索中…</div>
+      <div v-else-if="failed" class="gs-empty gs-fail" @click="onInput">搜索失败了，点击重试</div>
       <div v-else-if="query && !flat.length" class="gs-empty">没有找到「{{ query }}」相关内容</div>
       <div v-else-if="!query" class="gs-empty">输入关键词，回车或点击结果跳转</div>
 
@@ -54,21 +55,24 @@ const query = ref('')
 const loading = ref(false)
 const inputRef = ref(null)
 const active = ref(0)
-let result = { materials: [], knowledge_points: [], questions: [], tasks: [] }
+const failed = ref(false) // 请求失败要明示，不能伪装成「没有找到」
+const EMPTY = () => ({ materials: [], knowledge_points: [], questions: [], tasks: [] })
+const result = ref(EMPTY()) // 必须是 ref：普通变量重新赋值不会触发 computed 重算
 let timer = null
 
 const groups = computed(() => [
-  { key: 'materials', label: '📄 课程资料', items: result.materials.map(m => ({ ...m, title: `${m.title}（${m.course}）`, route: '/materials' })) },
-  { key: 'kps', label: '💡 知识点', items: result.knowledge_points.map(k => ({ ...k, title: `${k.title}（${k.course}）`, route: '/knowledge' })) },
-  { key: 'questions', label: '❓ 题目', items: result.questions.map(q => ({ ...q, title: q.kp_title || '题目', route: '/practice' })) },
-  { key: 'tasks', label: '✅ 学习任务', items: result.tasks.map(t => ({ ...t, title: t.title, route: '/tasks' })) },
+  { key: 'materials', label: '📄 课程资料', items: result.value.materials.map(m => ({ ...m, title: `${m.title}（${m.course}）`, route: '/materials' })) },
+  { key: 'kps', label: '💡 知识点', items: result.value.knowledge_points.map(k => ({ ...k, title: `${k.title}（${k.course}）`, route: '/knowledge' })) },
+  { key: 'questions', label: '❓ 题目', items: result.value.questions.map(q => ({ ...q, title: q.kp_title || '题目', route: '/practice' })) },
+  { key: 'tasks', label: '✅ 学习任务', items: result.value.tasks.map(t => ({ ...t, title: t.title, route: '/tasks' })) },
 ])
 const flat = computed(() => groups.value.flatMap(g => g.items))
 
 function open() {
   visible.value = true
   query.value = ''
-  result = { materials: [], knowledge_points: [], questions: [], tasks: [] }
+  failed.value = false
+  result.value = EMPTY()
   active.value = 0
 }
 function close() { visible.value = false }
@@ -77,13 +81,17 @@ function focusInput() { inputRef.value?.focus() }
 function onInput() {
   clearTimeout(timer)
   const q = query.value.trim()
-  if (!q) { result = { materials: [], knowledge_points: [], questions: [], tasks: [] }; return }
+  if (!q) { failed.value = false; result.value = EMPTY(); return }
   timer = setTimeout(async () => {
     loading.value = true
+    failed.value = false
     try {
-      result = await api.search(q)
-      active.value = 0
-    } catch { /* 401 由 api 层统一处理 */ }
+      const r = await api.search(q)
+      // 只接受仍是当前关键词的响应，避免慢网下旧响应覆盖新输入
+      if (query.value.trim() === q) { result.value = r; active.value = 0 }
+    } catch {
+      if (query.value.trim() === q) { failed.value = true; result.value = EMPTY() }
+    }
     finally { loading.value = false }
   }, 250)
 }
@@ -127,4 +135,5 @@ defineExpose({ open })
 .gs-title { font-size: 14px; color: #303133; }
 .gs-snippet { font-size: 12px; color: #909399; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gs-empty { text-align: center; color: #909399; font-size: 13px; padding: 32px 0; }
+.gs-fail { color: #f56c6c; cursor: pointer; }
 </style>
