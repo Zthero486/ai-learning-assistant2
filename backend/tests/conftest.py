@@ -38,8 +38,16 @@ def _isolate_ai_env():
     同理：打包版会注入「内置默认 key」，测试期必须用 AI_DISABLE_BUILTIN=1
     关掉，否则默认就带 AI，规则引擎分支永远测不到。
     """
-    for name in ("AI_API_KEY", "AI_BASE_URL", "AI_MODEL", "AI_PROXY", "DEEPSEEK_API_KEY",
-                "AI_ASR_URL", "AI_ASR_KEY", "AI_ASR_MODEL"):
+    for name in (
+        "AI_API_KEY",
+        "AI_BASE_URL",
+        "AI_MODEL",
+        "AI_PROXY",
+        "DEEPSEEK_API_KEY",
+        "AI_ASR_URL",
+        "AI_ASR_KEY",
+        "AI_ASR_MODEL",
+    ):
         os.environ.pop(name, None)
     os.environ["AI_DISABLE_BUILTIN"] = "1"
     yield

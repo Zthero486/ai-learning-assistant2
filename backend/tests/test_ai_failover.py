@@ -2,7 +2,6 @@
 
 import httpx
 import pytest
-
 from app import ai_helper
 
 
@@ -105,18 +104,34 @@ def test_非瞬时不切换_带工具先降级(two_providers, monkeypatch):
     )
     assert msg["content"] == "no-tools-ok"
     # 两次调用都在主渠道：先带工具，再去工具
-    assert calls == [("https://primary/v1/chat/completions", True),
-                     ("https://primary/v1/chat/completions", False)]
+    assert calls == [
+        ("https://primary/v1/chat/completions", True),
+        ("https://primary/v1/chat/completions", False),
+    ]
 
 
 def test_调用链对状态机透明(two_providers, monkeypatch):
     """切渠道后 tool_calls 结构原样返回——状态机轮次/上下文不受影响。"""
+
     def fake_post(url, **kw):
         r = FakeResp()
-        r.json = lambda: {"choices": [{"message": {
-            "role": "assistant", "content": "",
-            "tool_calls": [{"id": "c1", "type": "function",
-                            "function": {"name": "find_node", "arguments": "{}"}}]}}]}
+        r.json = lambda: {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "c1",
+                                "type": "function",
+                                "function": {"name": "find_node", "arguments": "{}"},
+                            }
+                        ],
+                    }
+                }
+            ]
+        }
         return r
 
     monkeypatch.setattr(ai_helper.httpx, "post", fake_post)

@@ -5,17 +5,31 @@ from backend.tests.conftest import AuthClient
 
 def test_text_notes_crud_and_filter(client: AuthClient):
     # 建两条不同节的笔记
-    r = client.post("/api/text-notes", json={
-        "node_code": "party-01-01", "offset": 10, "length": 20,
-        "quote": "第一节的原文片段", "note": "", "color": "yellow",
-    })
+    r = client.post(
+        "/api/text-notes",
+        json={
+            "node_code": "party-01-01",
+            "offset": 10,
+            "length": 20,
+            "quote": "第一节的原文片段",
+            "note": "",
+            "color": "yellow",
+        },
+    )
     assert r.status_code == 201, r.text
     n1 = r.json()
     assert n1["id"] and n1["uuid"]
-    r = client.post("/api/text-notes", json={
-        "node_code": "party-02-01", "offset": 0, "length": 8,
-        "quote": "第二节原文", "note": "这里爱考", "color": "green",
-    })
+    r = client.post(
+        "/api/text-notes",
+        json={
+            "node_code": "party-02-01",
+            "offset": 0,
+            "length": 8,
+            "quote": "第二节原文",
+            "note": "这里爱考",
+            "color": "green",
+        },
+    )
     n2 = r.json()
     assert r.status_code == 201
 
@@ -37,8 +51,9 @@ def test_text_notes_crud_and_filter(client: AuthClient):
 
     # 删除
     assert client.delete(f"/api/text-notes/{n2['id']}").json()["deleted"] == 1
-    assert client.get("/api/text-notes").json()["items"] == [client.get(
-        "/api/text-notes", params={"node": "party-01-01"}).json()["items"][0]]
+    assert client.get("/api/text-notes").json()["items"] == [
+        client.get("/api/text-notes", params={"node": "party-01-01"}).json()["items"][0]
+    ]
     # 删不存在的 404
     assert client.delete(f"/api/text-notes/{n2['id']}").status_code == 404
 
@@ -51,12 +66,24 @@ def test_text_notes_user_isolation():
     """两个用户同 node 各建各的，互不可见。"""
     c1, c2 = AuthClient(), AuthClient()
     try:
-        a = c1.post("/api/text-notes", json={
-            "node_code": "prc-01-01", "offset": 0, "length": 5, "quote": "甲的笔记",
-        }).json()
-        c2.post("/api/text-notes", json={
-            "node_code": "prc-01-01", "offset": 30, "length": 5, "quote": "乙的笔记",
-        })
+        a = c1.post(
+            "/api/text-notes",
+            json={
+                "node_code": "prc-01-01",
+                "offset": 0,
+                "length": 5,
+                "quote": "甲的笔记",
+            },
+        ).json()
+        c2.post(
+            "/api/text-notes",
+            json={
+                "node_code": "prc-01-01",
+                "offset": 30,
+                "length": 5,
+                "quote": "乙的笔记",
+            },
+        )
         items = c1.get("/api/text-notes", params={"node": "prc-01-01"}).json()["items"]
         assert len(items) == 1 and items[0]["id"] == a["id"]
         # 乙不能改/删甲的
@@ -70,5 +97,6 @@ def test_text_notes_user_isolation():
 def test_text_notes_in_sync_chain():
     """text_notes 必须进同步链，否则跨机会丢笔记。"""
     from backend.app import main, sync
+
     assert "text_notes" in main.USER_TABLES
     assert "text_notes" in sync.CHAIN

@@ -76,7 +76,11 @@ class TestAiPaths:
         """知识点没关联史料时，用描述/标题当上下文，而不是直接降级。"""
         kp = client.post(
             "/api/knowledge-points",
-            json={"title": "鸦片战争与《南京条约》", "course": "晚清", "description": "1840—1842 年"},
+            json={
+                "title": "鸦片战争与《南京条约》",
+                "course": "晚清",
+                "description": "1840—1842 年",
+            },
         ).json()
         r = client.post("/api/questions/generate", json={"kp_id": kp["id"], "num": 1})
         assert r.json()["source"] == "ai"
