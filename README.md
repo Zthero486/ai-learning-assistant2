@@ -60,7 +60,7 @@ Windows 下可直接双击 `scripts/start_all.bat` 一键启动。
 python scripts/build_portable.py
 ```
 
-产物在 `release/` 目录：**双击 `AILearningAssistant.exe` 即可运行**，自动启动服务并打开界面；数据保存在 exe 同级的 `data/` 目录，整个文件夹可整体拷贝到其他电脑。详见[打包与发布说明](docs/打包发布说明.md)。
+产物在 `release/` 目录：**双击 `AILearningAssistant.exe` 即可运行**，自动启动服务并打开界面；数据保存在 exe 同级的 `data/` 目录，整个文件夹可整体拷贝到其他电脑。
 
 > 默认会把 `backend/.env` 里的 AI key 冻结进 exe（分享包开箱即用）；
 > 要发「不带任何 key」的公开版本就加 `--no-embed-key`：
@@ -124,11 +124,7 @@ ai-learning-assistant/
 - [**实验报告**（环境参数、测试用例、Agent 评测与性能量化）](docs/实验报告.md)
 - [**信息安全设计**（口令哈希、令牌、SQL 参数化、Agent 写入预算）](docs/信息安全设计.md)
 - [**开源移植清单**（搬了哪些开源项目、改了什么、为什么不用别的，报告可直接引用）](docs/开源移植清单.md)
-- [**v2 重构方案**（重构前后 UML 与量化对比）](docs/v2重构方案.md)
 - [状态机设计说明（Agent 三幕流程与兜底）](docs/状态机演示.md)
-- [打包与发布说明（便携版）](docs/打包发布说明.md)
-- [贡献指南与代码规范](CONTRIBUTING.md)
-- [原始需求（开题报告）](docs/需求/)
 
 ## 团队
 
