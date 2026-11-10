@@ -459,3 +459,38 @@ def test_删除在只读模式下被拒(party_ctx):
     assert r["ok"] is False and "写入权限" in r["error"]
     r2 = ai_agent.execute_tool(ctx, "delete_task", {"id": 1}, allow_write=False)
     assert r2["ok"] is False and "写入权限" in r2["error"]
+
+
+def test_单选题选项拼题干与答案归一(party_ctx):
+    ctx, code = party_ctx
+    kp = ai_agent.execute_tool(ctx, "create_knowledge_point",
+                               {"node_code": code, "title": "选择题测试点"}, allow_write=True)
+    # 结构化 options：拼进题干，答案字母归一
+    r1 = ai_agent.execute_tool(ctx, "create_questions", {"kp_id": kp["id"], "questions": [
+        {"type": "单选题", "question": "党的十一届三中全会召开于哪一年？",
+         "options": ["1976年", "1978年", "1980年", "1982年"], "answer": "B",
+         "evidence": "1978年12月，党的十一届三中全会召开。"},
+        {"type": "单选题", "question": "拨乱反正胜利完成的标志是？",
+         "options": ["十一届三中全会", "历史决议通过", "真理标准讨论"], "answer": "历史决议通过",
+         "evidence": "历史决议的通过标志着拨乱反正胜利完成。"},
+    ]}, allow_write=True)
+    assert r1["ok"] and len(r1["ids"]) == 2
+    conn = ctx.conn()
+    rows = conn.execute("SELECT type,question,answer FROM questions WHERE id IN (?,?)",
+                        r1["ids"]).fetchall()
+    conn.close()
+    q1, q2 = rows[0], rows[1]
+    assert q1["type"] == "单选题" and q1["answer"].upper().startswith("B")
+    assert "A. 1976年" in q1["question"] and "D. 1982年" in q1["question"]
+    # 选项全文给的答案也归一成字母
+    assert q2["answer"].upper().startswith("B"), q2["answer"]
+    # 答案已带字母的保持原样
+    r2 = ai_agent.execute_tool(ctx, "create_questions", {"kp_id": kp["id"], "questions": [
+        {"type": "单选题", "question": "题干已含选项：？A. 甲 B. 乙 C. 丙 D. 丁",
+         "answer": "C. 丙", "evidence": "依据"}]}, allow_write=True)
+    conn = ctx.conn()
+    row = conn.execute("SELECT question,answer FROM questions WHERE id=?",
+                       (r2["ids"][0],)).fetchone()
+    conn.close()
+    assert row["question"].count("A.") == 1  # 没有重复拼选项
+    assert row["answer"].upper().startswith("C")

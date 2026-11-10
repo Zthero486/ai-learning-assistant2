@@ -619,6 +619,52 @@ def _tool_highlight_text(ctx: AgentContext, args: dict) -> dict:
             "message": f"已在教材「{row['title']}」里划出重点（AI 专属紫色），学生打开这一节即可看到"}
 
 
+_CHOICE_MARK = re.compile(r"(?:^|[^A-Za-z0-9])([A-D])\s*[.、．)）：:]\s*")
+
+
+def _split_choice_options(text: str) -> list:
+    """从题干里摘出 A/B/C/D 选项（与前端 parseOptions 同口径），返回 [(字母, 选项全文)]。
+
+    找最长连续 A,B,C(,D) 段，至少 3 项才算选择题；摘不出返回空表。
+    """
+    marks = [(m.group(1), m.end(), m.start(1)) for m in _CHOICE_MARK.finditer(text)]
+    best: list = []
+    for i, (key, start, lead) in enumerate(marks):
+        if key != "A":
+            continue
+        seq = [(key, start, lead)]
+        for k2, s2, l2 in marks[i + 1:]:
+            if k2 == chr(65 + len(seq)):
+                seq.append((k2, s2, l2))
+            else:
+                break
+        if len(seq) >= 3 and len(seq) > len(best):
+            best = seq
+    if not best:
+        return []
+    return [
+        (key, text[start:(best[i + 1][2] if i + 1 < len(best) else len(text))].strip())
+        for i, (key, start, _) in enumerate(best)
+    ]
+
+
+def _normalize_choice_answer(qtype: str, question: str, answer: str) -> str:
+    """选择题答案归一成「字母. 选项全文」，前端 answerKey 只认开头字母。
+
+    模型可能给 "B"、"B. xxx"、整个选项原文、甚至「正确答案是坚持实事求是」——
+    能对上选项的就换算成字母，对不上就原样返回（前端自动回退成自评题，不会误判）。
+    """
+    if not re.match(r"^[A-D](\s|[.、．)）：:]|$)", (answer or "").strip().upper()):
+        opts = _split_choice_options(question)
+        if opts:
+            a = (answer or "").strip()
+            for key, txt in opts:
+                if a and (a in txt or txt in a or a in txt.replace("，", ",")):
+                    answer = f"{key}. {txt}"
+                    break
+    return answer
+
+
 def _tool_create_questions(ctx: AgentContext, args: dict) -> dict:
     kp_id = _as_int(args.get("kp_id"))
     if not kp_id:
@@ -653,6 +699,25 @@ def _tool_create_questions(ctx: AgentContext, args: dict) -> dict:
             if not question:
                 skipped.append(f"第{i + 1}项缺 question")
                 continue
+            # 选择题：结构化 options 数组拼进题干（前端解析器只认题干内的 A. B. C. D.），
+            # 题干里已有内联选项就不重复拼
+            qtype = str(q.get("type") or "简答").strip()
+            opts_arg = q.get("options")
+            if isinstance(opts_arg, str):
+                try:
+                    opts_arg = json.loads(opts_arg)
+                except json.JSONDecodeError:
+                    opts_arg = None
+            if isinstance(opts_arg, list):
+                opts = [str(o).strip() for o in opts_arg if str(o).strip()][:4]
+                if len(opts) >= 2 and not _CHOICE_MARK.search(question):
+                    letters = "ABCD"
+                    question = question.rstrip() + "\n" + "\n".join(
+                        f"{letters[i]}. {t}" for i, t in enumerate(opts)
+                    )
+            answer = str(q.get("answer") or "").strip()
+            if "单选" in qtype or "选择" in qtype or "choice" in qtype.lower():
+                answer = _normalize_choice_answer(qtype, question, answer)
             # 原文依据硬约束：模型给不出教材原句的题不落库（2026-11-09 用户要求）
             evidence = str(q.get("evidence") or "").strip()
             if not evidence:
@@ -661,8 +726,8 @@ def _tool_create_questions(ctx: AgentContext, args: dict) -> dict:
             cur = conn.execute(
                 "INSERT INTO questions(user_id,uuid,kp_id,type,question,answer,evidence,source,created_at)"
                 " VALUES(?,?,?,?,?,?,?,?,?)",
-                (ctx.uid, uuid.uuid4().hex, kp_id, str(q.get("type") or "简答"),
-                 question, str(q.get("answer") or "").strip(), evidence[:200], "ai", ctx.now()),
+                (ctx.uid, uuid.uuid4().hex, kp_id, qtype,
+                 question, answer, evidence[:200], "ai", ctx.now()),
             )
             ids.append(cur.lastrowid)
         conn.commit()
@@ -1106,17 +1171,20 @@ TOOLS = {
         _spec("create_questions",
               "给某个知识点批量新建练习题。questions 必须是 JSON 数组（不是字符串），"
               "每项都要有 question、answer 和 evidence（教材原文依据，摘自 get_node_text 的正文原句）；"
-              "没有 evidence 的题不会入库。题型用「单选题/名词解释/时间排序/简答/材料分析/论述」。",
+              "没有 evidence 的题不会入库。单选题：type 填「单选题」，options 传选项数组（题干里不要写选项），"
+              "answer 填正确选项的字母（如 B）；其余题型（名词解释/时间排序/简答/材料分析/论述）不用 options。",
               {"kp_id": _I("知识点 id（来自 list_knowledge_points）"),
                "questions": {
                    "type": "array",
-                   "description": '题目数组，最多 10 项，每项如 {"type":"单选题","question":"…","answer":"…","evidence":"…"}',
+                   "description": '题目数组，最多 10 项；单选题如 {"type":"单选题","question":"…","options":["…","…","…","…"],"answer":"B","evidence":"…"}，简答如 {"type":"简答","question":"…","answer":"…","evidence":"…"}',
                    "items": {
                        "type": "object",
                        "properties": {
-                           "type": _S("题型，缺省为简答"),
-                           "question": _S("题干"),
-                           "answer": _S("参考答案"),
+                           "type": _S("题型，缺省为简答；单选题必须用「单选题」"),
+                           "question": _S("题干（单选题不要把选项写进题干）"),
+                           "options": {"type": "array", "items": {"type": "string"},
+                                       "description": "单选题专用：选项数组，2-4 个字符串，按 A/B/C/D 顺序"},
+                           "answer": _S("参考答案；单选题填正确选项字母（如 B）"),
                            "evidence": _S("教材原文依据（从 get_node_text 的正文里摘原句，≤80 字）"),
                        },
                        "required": ["question", "answer", "evidence"],
@@ -1280,7 +1348,7 @@ def system_prompt(ctx: AgentContext) -> str:
 **硬性要求**：原文节选必须**逐字复制自 get_node_text 返回的教材正文**（或该节史料原文），出处行与来源行都必须写**真实节 code**——学生点卡片会直接跳到教材那一节并标出这段原文，code 错了或写了材料 id 就跳不了；引用的内容没有对应的教材节时不要套词条卡格式，正常分点回答。学生说「带我去原文/让我看看书上怎么写的」时，直接调 navigate(route="/syllabus", node=节 code, quote=原文片段)，界面会当场翻到那一节并标出来。
 问题不是单个知识点、或没查到原文时不必套用，正常分点回答即可。
 19. **模糊/情绪型请求先给结论**：学生只表达焦虑或没有明确任务（「下周就考试了很慌怎么办」「我该怎么复习」），先 get_my_stats 看一眼进度，直接给 3 步以内的具体做法收尾，最多建 2-3 条任务；**不要**借此一口气灌知识点、批量出题——他真要整理/出题会说清楚的。
-17. **出题必须有原文依据**：调 create_questions 前必须先 get_node_text 读该知识点的节正文；每道题的 evidence 字段填教材正文里的**原句摘录**（≤80 字）；写不出依据的知识点不要给它出题，这一节没有教材正文就直接告诉学生出不了并说明原因，绝不凭模型记忆编题。
+17. **出题必须有原文依据**：调 create_questions 前必须先 get_node_text 读该知识点的节正文；每道题的 evidence 字段填教材正文里的**原句摘录**（≤80 字）；写不出依据的知识点不要给它出题，这一节没有教材正文就直接告诉学生出不了并说明原因，绝不凭模型记忆编题。学生说「出选择题/几道选择题练练」时优先出单选题：type 填「单选题」、options 传 4 个选项数组、answer 填字母；干扰项要有真实迷惑性——用相近年份、相近会议/人物、张冠李戴的表述做干扰，不要「以上都不对」这类废选项；其余情况默认简答/材料分析为主、单选题穿插 1-2 道。
 18. **划重点**：学生请你「画重点/标重点/把重点标到教材上」时，先 get_node_text 读正文，再调 highlight_text 把真正关键的句子划成紫色——每节挑 2~5 处、每处 2~200 字，note 用一句话写清为什么关键；quote **直接从 get_node_text 返回的正文复制**（逐字，不要自己加引号/改标点/缩写；只截取前 16 字以上也能定位）。**绝不要用 create_material 把重点摘编存成资料来代替划重点**——那不是学生要的。答复里说明划了哪几处、各为什么关键。
 
 内容要求：
