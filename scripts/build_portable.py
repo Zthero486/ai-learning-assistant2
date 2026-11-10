@@ -238,6 +238,8 @@ def build_exe() -> None:
         *([] if noclean else ["--clean"]),
         "--onefile",
         "--console",
+        "--icon",
+        str(ROOT / "assets" / "app.ico"),
         "--name",
         EXE_NAME,
         "--distpath",

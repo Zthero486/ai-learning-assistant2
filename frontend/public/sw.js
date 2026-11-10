@@ -1,6 +1,6 @@
 /* 极简 Service Worker：只缓存带内容哈希的静态资源（不可变），API 与 HTML 一律走网络。
    这样「添加到主屏幕」在安卓上可用，又不会把升级后的新版本缓存成旧版。 */
-const CACHE = 'ss-static-v1';
+const CACHE = 'ss-static-v2';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
