@@ -66,3 +66,7 @@ _tmp/
 _ptmp/
 _build_*.log
 题库*.md
+
+# ---- 本机运行信息（含内网地址，不入库）----
+当前公网地址.txt
+_trace_probe.txt
