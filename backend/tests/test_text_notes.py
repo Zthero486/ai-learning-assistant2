@@ -1,6 +1,6 @@
 """教材笔记（text_notes）：划词高亮/批注的 CRUD 与数据隔离。"""
 
-from backend.tests.conftest import AuthClient
+from tests.conftest import AuthClient
 
 
 def test_text_notes_crud_and_filter(client: AuthClient):
@@ -96,7 +96,7 @@ def test_text_notes_user_isolation():
 
 def test_text_notes_in_sync_chain():
     """text_notes 必须进同步链，否则跨机会丢笔记。"""
-    from backend.app import main, sync
+    from app import main, sync
 
     assert "text_notes" in main.USER_TABLES
     assert "text_notes" in sync.CHAIN
