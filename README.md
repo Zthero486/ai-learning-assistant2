@@ -8,20 +8,6 @@
 > **一个账号只学一门课**。注册后先选课（`/welcome`），此后教材目录、时间轴、史实要点、自测都只围绕这一门展开；
 > 侧栏「切换课程」可改选，旧数据不会删除。
 
-## 仓库与分支
-
-```
-https://github.com/qianxingzhigui/ai-learning-assistant2
-```
-
-| 分支 | 用途 |
-| --- | --- |
-| `develop`（**默认分支**） | 日常开发主干，`git clone` 后就在这里，改动直接推这里 |
-| `master` | 发布快照，只接受 PR，内容跟随 `develop` |
-| `refactor-v2` | 历史遗留，已并入 develop，勿用 |
-
-> `develop` 无分支保护，协作者可直接 push；`master` 要求 PR + 1 人 review。
-
 ## 快速开始
 
 ```bash
@@ -45,21 +31,6 @@ npm run dev
 浏览器打开 <http://127.0.0.1:5173>，演示账号 `demo` / `demo123`（已预设为「党史」）。
 
 Windows 下可直接双击 `scripts/start_all.bat` 一键启动。
-
-### 日常同步（每次开工/收工）
-
-```bash
-git pull --no-rebase origin develop    # 开工前
-cd backend && python -m pytest -q      # 提交前，必须全绿
-python scripts/agent_eval.py           # AI 行为评测（11 个真模型场景，要 AI_API_KEY）
-python scripts/demo_state_machine.py   # Agent 状态机现场演示（默认三幕离线，--live 追加真模型）
-git add -A && git commit -m "feat: ..." && git push origin develop
-```
-
-演示/答辩怎么讲状态机（含讲稿与兜底）：`docs/状态机演示.md`。
-
-远端有分歧一律用 `git merge`，**不要 `git rebase`**（本环境会卡中间态）。
-
 
 ## 功能总览
 
@@ -142,26 +113,21 @@ ai-learning-assistant/
 │   └── tests/        # pytest 测试
 ├── frontend/         # Vue3 前端
 ├── scripts/          # 启动 / 打包 / 灌数据脚本
-├── docs/             # 上手、协作、打包、日志
+├── docs/             # 设计说明、报告、手册、日志
 └── .github/          # CI、issue/PR 模板
 ```
 
 ## 文档
 
-- [**同学上手指南**（clone → 装依赖 → 启动 → 每日同步，10 分钟跑通）](docs/同学上手指南.md)
-- [**协作看板**（任务分派与进度，成员每日必看）](docs/协作看板.md)
-- [**协作自动化**（任务如何自动通知到人，不用口头转述）](docs/协作自动化.md)
-- [贡献指南与代码规范](CONTRIBUTING.md)
-- [**项目交接说明**（接手者先读这个）](docs/交接说明.md)
-- [项目开发日志（决策与踩坑）](docs/项目开发日志.md)
-- [团队分工、协作流程与绩效分配](docs/team.md)
-- [打包与发布说明（便携版）](docs/打包发布说明.md)
-- [**开源移植清单**（搬了哪些开源项目、改了什么、为什么不用别的，报告可直接引用）](docs/开源移植清单.md)
-- [工作量统计（自动生成）](docs/工作量统计.md)
 - [**用户手册**（七个子模块图文并茂，面向使用者）](docs/用户手册.md)
 - [**实验报告**（环境参数、测试用例、Agent 评测与性能量化）](docs/实验报告.md)
 - [**信息安全设计**（口令哈希、令牌、SQL 参数化、Agent 写入预算）](docs/信息安全设计.md)
+- [**开源移植清单**（搬了哪些开源项目、改了什么、为什么不用别的，报告可直接引用）](docs/开源移植清单.md)
 - [**v2 重构方案**（重构前后 UML 与量化对比）](docs/v2重构方案.md)
+- [状态机设计说明（Agent 三幕流程与逆底）](docs/状态机演示.md)
+- [项目开发日志（决策与踩坑）](docs/项目开发日志.md)
+- [打包与发布说明（便携版）](docs/打包发布说明.md)
+- [贡献指南与代码规范](CONTRIBUTING.md)
 - [原始需求（开题报告）](docs/需求/)
 
 ## 团队
