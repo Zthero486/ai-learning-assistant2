@@ -10,6 +10,7 @@ v1 朴素实现说明：
 import json
 import os
 import re
+import time
 
 import httpx
 
@@ -19,6 +20,7 @@ from . import apppaths
 DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"  # 智谱 GLM：永久免费额度
 DEFAULT_MODEL = "glm-4-flash"
 REQUEST_TIMEOUT = 90.0  # 出 5 道题实测要 20~25s，留足余量
+PRIMARY_RETRY_DELAY = 2.0  # 无备用渠道时，超时后原地重试前的等待秒数
 MAX_CONTEXT_CHARS = 4000  # 拼进 prompt 的资料片段上限
 
 # 常用免费/低价平台预设（套餐见 .env.example，切换只需改 .env 三行）
@@ -278,71 +280,119 @@ def transcribe(filename: str, content: bytes, content_type: str = "") -> str:
     return (payload.get("text") or "").strip()
 
 
+def _chat_once(base_url: str, api_key: str, model: str, payload: dict) -> dict:
+    """向单个渠道发一次请求，返回 assistant message；HTTP>=400 抛 HTTPStatusError。"""
+    body = dict(payload, model=model)
+    resp = httpx.post(
+        f"{base_url}/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}"},
+        json=body,
+        timeout=REQUEST_TIMEOUT,
+        proxy=get_proxy() or None,
+    )
+    if resp.status_code >= 400:
+        detail = (resp.text or "")[:500]
+        raise httpx.HTTPStatusError(
+            f"HTTP {resp.status_code}: {detail}", request=resp.request, response=resp
+        )
+    return resp.json()["choices"][0]["message"]
+
+
+def _providers() -> list:
+    """本次调用依次尝试的 (base_url, api_key, model) 列表：主配置在前，备用兑底。
+
+    备用渠道在 .env 里配三行（如智谱免费档做阶跃的兑底，见 .env.example）：
+        AI_BACKUP_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+        AI_BACKUP_API_KEY=...
+        AI_BACKUP_MODEL=glm-4-flash
+    """
+    chain = [(get_base_url(), get_api_key(), get_model())]
+    b_url = (os.environ.get("AI_BACKUP_BASE_URL") or "").strip()
+    b_key = (os.environ.get("AI_BACKUP_API_KEY") or "").strip()
+    if b_url and b_key:
+        b_model = (os.environ.get("AI_BACKUP_MODEL") or "").strip() or "glm-4-flash"
+        chain.append((b_url, b_key, b_model))
+    return chain
+
+
+def _is_transient(e: Exception) -> bool:
+    """超时/连接抖动/限流/服务端 5xx —— 换个渠道再试是有意义的。"""
+    if isinstance(e, (httpx.TimeoutException, httpx.TransportError)):
+        return True
+    if isinstance(e, httpx.HTTPStatusError):
+        code = e.response.status_code
+        return code == 429 or code >= 500
+    return False
+
+
+def _chat_with_failover(payload: dict) -> dict:
+    """带兑底的多渠道调用：主模型超时/限流/5xx 时自动切备用，不丢调用上下文。
+
+    状态机（感知→行动→审查）每一轮都走这里，中途切模型对它完全透明——
+    轮次、工具调用、上下文都不受影响，只有 HTTP 请求换了目的地。
+    渠道遍历完仍失败则把最后一个错误抛出去，由上层翻译成人话。
+    """
+    chain = _providers()
+    last: Exception | None = None
+    for i, (url, key, model) in enumerate(chain):
+        try:
+            return _chat_once(url, key, model, payload)
+        except httpx.HTTPStatusError as e:
+            last = e
+            if not _is_transient(e):
+                # 400/401/451 这类换渠道也大概率复现的问题：带工具时先试同渠道去工具降级
+                if payload.get("tools") and e.response.status_code in (400, 404, 422):
+                    light = {k: v for k, v in payload.items() if k not in ("tools", "tool_choice")}
+                    try:
+                        return _chat_once(url, key, model, light)
+                    except Exception as e2:
+                        last = e2
+                continue
+            if i + 1 >= len(chain):
+                break
+        except Exception as e:  # 超时/连接错误
+            last = e
+            if i + 1 >= len(chain):
+                # 没有备用渠道了：原地重试一次（阶跃抖动常是瞬时的）
+                time.sleep(PRIMARY_RETRY_DELAY)
+                return _chat_once(url, key, model, payload)
+    raise last
+
+
 def call_llm(system_prompt: str, user_prompt: str) -> str:
     """调用大模型（OpenAI 兼容 /chat/completions），返回文本回复。"""
-    api_key = get_api_key()
-    if not api_key:
+    if not get_api_key():
         raise RuntimeError("未配置 AI_API_KEY")
-    proxy = get_proxy()
-    resp = httpx.post(
-        f"{get_base_url()}/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}"},
-        json={
-            "model": get_model(),
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "temperature": 0.5,
-        },
-        timeout=REQUEST_TIMEOUT,
-        proxy=proxy or None,
-    )
-    resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"]
+    payload = {
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.5,
+    }
+    msg = _chat_with_failover(payload)
+    return msg.get("content") or ""
 
 
 def chat_completion(messages: list, tools: list = None, temperature: float = 0.4) -> dict:
     """多轮对话 + 工具调用：返回 assistant 的 message 字典（含 tool_calls）。
 
-    某些 OpenAI 兼容平台不认 `tools` 字段（直接 400）。这里做一次降级重试：
-    去掉工具再问一遍，模型仍能纯文本作答，不至于让对话整条挂掉。
+    两层兜底：
+    1. 渠道兑底——主模型超时/限流/5xx 自动切备用渠道（AI_BACKUP_* 配置），
+       状态机轮次与上下文不受影响；
+    2. 工具降级——某渠道不认 tools 字段（400/404/422）时去掉工具重问，
+       模型仍能纯文本作答，不至于让对话整条挂掉。
     """
-    api_key = get_api_key()
-    if not api_key:
+    if not get_api_key():
         raise RuntimeError("未配置 AI_API_KEY")
     payload = {
-        "model": get_model(),
         "messages": messages,
         "temperature": temperature,
     }
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
-
-    def _post(body: dict):
-        resp = httpx.post(
-            f"{get_base_url()}/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}"},
-            json=body,
-            timeout=REQUEST_TIMEOUT,
-            proxy=get_proxy() or None,
-        )
-        if resp.status_code >= 400:
-            detail = (resp.text or "")[:500]
-            raise httpx.HTTPStatusError(
-                f"HTTP {resp.status_code}: {detail}", request=resp.request, response=resp
-            )
-        return resp.json()["choices"][0]["message"]
-
-    try:
-        return _post(payload)
-    except httpx.HTTPStatusError as e:
-        if tools and e.response.status_code in (400, 404, 422):
-            payload.pop("tools", None)
-            payload.pop("tool_choice", None)
-            return _post(payload)
-        raise
+    return _chat_with_failover(payload)
 
 
 def test_connection() -> dict:
