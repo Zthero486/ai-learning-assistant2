@@ -216,8 +216,16 @@ def config_snapshot() -> dict:
 
 def reset_runtime_config() -> None:
     """清掉运行时 AI 配置，回落到内置默认（阶跃）或规则引擎。"""
-    for name in ("AI_API_KEY", "AI_BASE_URL", "AI_MODEL", "AI_PROXY", "DEEPSEEK_API_KEY",
-                 "AI_ASR_URL", "AI_ASR_KEY", "AI_ASR_MODEL"):
+    for name in (
+        "AI_API_KEY",
+        "AI_BASE_URL",
+        "AI_MODEL",
+        "AI_PROXY",
+        "DEEPSEEK_API_KEY",
+        "AI_ASR_URL",
+        "AI_ASR_KEY",
+        "AI_ASR_MODEL",
+    ):
         os.environ.pop(name, None)
     path = apppaths.env_file()
     if not path.exists():
@@ -434,6 +442,7 @@ def test_connection() -> dict:
         # 兜底：非 httpx 异常（如打包环境归档损坏导致的模块加载失败）也不能 500，
         # 学生只会看到「请求失败」，必须给出可行动的提示。异常照记日志。
         import traceback
+
         traceback.print_exc()
         return {
             "ok": False,

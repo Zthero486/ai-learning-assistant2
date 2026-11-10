@@ -69,7 +69,9 @@ def test_switch_track_hides_other_course_data(client, tmp_path, monkeypatch):
     assert summary["total"] == 0 and summary["active_wrong"] == 0
     # 搜索不串课
     s = client.get("/api/search", params={"q": "遵义"}).json()
-    assert not s["materials"] and not s["knowledge_points"] and not s["questions"] and not s["tasks"]
+    assert (
+        not s["materials"] and not s["knowledge_points"] and not s["questions"] and not s["tasks"]
+    )
 
     # 切回党史，数据原样还在
     _switch(client, "party")

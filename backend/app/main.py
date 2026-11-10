@@ -23,7 +23,16 @@ from pathlib import Path
 from urllib.parse import quote
 
 import httpx
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -230,10 +239,16 @@ def init_db() -> None:
 # 2026-11-07 起按用户要求严格按课程隔离，统一归一成英文 track 再过滤；
 # 时间轴(events)是全局共用的，明确不参与归一与隔离。
 _COURSE_ALIASES = {
-    "party": "party", "党史": "party", "中国党史": "party",
-    "prc": "prc", "新中国史": "prc", "中华人民共和国史": "prc",
-    "reform": "reform", "改革开放史": "reform",
-    "socialism": "socialism", "社会主义发展史": "socialism",
+    "party": "party",
+    "党史": "party",
+    "中国党史": "party",
+    "prc": "prc",
+    "新中国史": "prc",
+    "中华人民共和国史": "prc",
+    "reform": "reform",
+    "改革开放史": "reform",
+    "socialism": "socialism",
+    "社会主义发展史": "socialism",
 }
 
 
@@ -398,6 +413,7 @@ def migrate_qushi(conn: sqlite3.Connection) -> None:
 
     全部 ALTER ADD COLUMN，幂等，不重建表。
     """
+
     def cols_of(table: str) -> set:
         return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
 
@@ -597,7 +613,11 @@ def list_tracks(uid: int = Depends(require_user)):
         d = dict(t)
         d["selected"] = t["key"] == current
         items.append(d)
-    return {"tracks": items, "current": current, "exam_types": [{"key": k, "label": v} for k, v in EXAM_TYPES]}
+    return {
+        "tracks": items,
+        "current": current,
+        "exam_types": [{"key": k, "label": v} for k, v in EXAM_TYPES],
+    }
 
 
 @app.post("/api/profile/track")
@@ -797,8 +817,11 @@ async def upload_material(
             uid,
             uuid.uuid4().hex,
             Path(file.filename).stem,
-            (_course_norm(course) if _course_norm(course) in _COURSE_ALIASES.values()
-             else (_user_track(uid) or "未分类")),
+            (
+                _course_norm(course)
+                if _course_norm(course) in _COURSE_ALIASES.values()
+                else (_user_track(uid) or "未分类")
+            ),
             save_name,
             ALLOWED_EXT[ext],
             content,
@@ -882,8 +905,11 @@ def create_kp(body: dict, uid: int = Depends(require_user)):
             uid,
             uuid.uuid4().hex,
             body.get("material_id"),
-            _course_norm(body.get("course")) if _course_norm(body.get("course")) in _COURSE_ALIASES.values()
-            else (_user_track(uid) or "未分类"),
+            (
+                _course_norm(body.get("course"))
+                if _course_norm(body.get("course")) in _COURSE_ALIASES.values()
+                else (_user_track(uid) or "未分类")
+            ),
             title,
             body.get("description", ""),
             node_code,
@@ -898,7 +924,9 @@ def create_kp(body: dict, uid: int = Depends(require_user)):
 
 
 @app.get("/api/knowledge-points")
-def list_kps(course: str = None, track: str = "", node_code: str = "", uid: int = Depends(require_user)):
+def list_kps(
+    course: str = None, track: str = "", node_code: str = "", uid: int = Depends(require_user)
+):
     """只看本课的知识点：优先显式 track 参数，否则用账号选的课程。
 
     隔离用 node_code 前缀而不是 course 列 —— 手建数据可能只打了粗标签（node_code=track，
@@ -929,7 +957,16 @@ def list_kps(course: str = None, track: str = "", node_code: str = "", uid: int 
 def update_kp(kid: int, body: dict, uid: int = Depends(require_user)):
     conn = db()
     fields, params = [], []
-    for col in ("title", "description", "course", "node_code", "exam_type", "era", "year_start", "year_end"):
+    for col in (
+        "title",
+        "description",
+        "course",
+        "node_code",
+        "exam_type",
+        "era",
+        "year_start",
+        "year_end",
+    ):
         if col in body:
             fields.append(f"{col}=?")
             params.append(body[col])
@@ -980,8 +1017,11 @@ def create_task(body: dict, uid: int = Depends(require_user)):
             uid,
             uuid.uuid4().hex,
             # 课程归一：没传/传了「未分类」就落到当前账号选的课程，保证隔离后还能看到
-            _course_norm(body.get("course")) if _course_norm(body.get("course")) in _COURSE_ALIASES.values()
-            else (_user_track(uid) or "未分类"),
+            (
+                _course_norm(body.get("course"))
+                if _course_norm(body.get("course")) in _COURSE_ALIASES.values()
+                else (_user_track(uid) or "未分类")
+            ),
             body.get("kp_id"),
             title,
             body.get("description", ""),
@@ -1108,7 +1148,9 @@ def create_event(body: dict, uid: int = Depends(require_user)):
 
 
 @app.get("/api/events")
-def list_events(era: str = "", kp_id: int = None, track: str = "", uid: int = Depends(require_user)):
+def list_events(
+    era: str = "", kp_id: int = None, track: str = "", uid: int = Depends(require_user)
+):
     conn = db()
     sql = "SELECT * FROM events WHERE user_id=?"
     params: list = [uid]
@@ -1205,10 +1247,7 @@ def get_timeline(era: str = "", track: str = "", uid: int = Depends(require_user
     if track:
         kp_sql += " AND node_code LIKE ?"
         kp_params.append(f"{track}-%")
-    kps = [
-        dict(r)
-        for r in conn.execute(kp_sql + " ORDER BY year_start", kp_params).fetchall()
-    ]
+    kps = [dict(r) for r in conn.execute(kp_sql + " ORDER BY year_start", kp_params).fetchall()]
     conn.close()
 
     span = {"start": None, "end": None}
@@ -1537,8 +1576,10 @@ def practice_summary(uid: int = Depends(require_user)):
     qps = []
     if track:
         cq = " AND (kp_id IN (SELECT id FROM knowledge_points WHERE course=?))"
-        cw = (" AND question_id IN (SELECT q.id FROM questions q "
-              "LEFT JOIN knowledge_points k ON k.id=q.kp_id WHERE k.course=?)")
+        cw = (
+            " AND question_id IN (SELECT q.id FROM questions q "
+            "LEFT JOIN knowledge_points k ON k.id=q.kp_id WHERE k.course=?)"
+        )
         qps = [track]
     row = conn.execute(
         f"""SELECT
@@ -1795,12 +1836,18 @@ def export_wrong_pdf(
         pdf.set_text_color(30, 30, 30)
         pdf.set_font("cjk", size=12)
         marked = "　★ 重点" if r["review_marked"] else ""
-        pdf.multi_cell(0, 7, f"{i}. {r['question']}{marked}", fill=True, new_x="LMARGIN", new_y="NEXT")
+        pdf.multi_cell(
+            0, 7, f"{i}. {r['question']}{marked}", fill=True, new_x="LMARGIN", new_y="NEXT"
+        )
         pdf.set_font("cjk", size=10)
         pdf.set_text_color(140, 140, 140)
         pdf.multi_cell(
-            0, 6, f"{r['kp_title'] or '未关联'} · 错 {r['wrong_count']} 次",
-            fill=True, new_x="LMARGIN", new_y="NEXT",
+            0,
+            6,
+            f"{r['kp_title'] or '未关联'} · 错 {r['wrong_count']} 次",
+            fill=True,
+            new_x="LMARGIN",
+            new_y="NEXT",
         )
         pdf.set_text_color(42, 110, 42)
         pdf.multi_cell(0, 6, f"答：{r['answer']}", fill=True, new_x="LMARGIN", new_y="NEXT")
@@ -2306,8 +2353,9 @@ def ai_chat(body: dict, uid: int = Depends(require_user)):
         raise HTTPException(400, "messages 不能为空")
     allow_write = bool(body.get("allow_write", True))
     # 页面内嵌 AI 传来的上下文：学生此刻在哪个功能页、正在做什么
-    ctx = ai_agent.AgentContext(uid, track, db, now,
-                                page_context=str(body.get("page_context") or ""))
+    ctx = ai_agent.AgentContext(
+        uid, track, db, now, page_context=str(body.get("page_context") or "")
+    )
 
     if not ai_helper.is_available():
         tip = (
@@ -2443,13 +2491,24 @@ def text_notes_create(payload: dict, uid: int = Depends(require_user)):
     cur = conn.execute(
         "INSERT INTO text_notes(user_id,uuid,node_code,offset,length,quote,note,color,"
         "created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
-        (uid, uuid.uuid4().hex, node_code, offset, min(length, 600), quote[:600],
-         note[:2000], color, now(), now()),
+        (
+            uid,
+            uuid.uuid4().hex,
+            node_code,
+            offset,
+            min(length, 600),
+            quote[:600],
+            note[:2000],
+            color,
+            now(),
+            now(),
+        ),
     )
     conn.commit()
     row = conn.execute(
         "SELECT id, uuid, node_code, offset, length, quote, note, color, created_at, updated_at "
-        "FROM text_notes WHERE id=?", (cur.lastrowid,)
+        "FROM text_notes WHERE id=?",
+        (cur.lastrowid,),
     ).fetchone()
     conn.close()
     return dict(row)
@@ -2480,7 +2539,8 @@ def text_notes_update(nid: int, payload: dict, uid: int = Depends(require_user))
     conn.commit()
     row = conn.execute(
         "SELECT id, uuid, node_code, offset, length, quote, note, color, created_at, updated_at "
-        "FROM text_notes WHERE id=?", (nid,)
+        "FROM text_notes WHERE id=?",
+        (nid,),
     ).fetchone()
     conn.close()
     if cur.rowcount == 0 or row is None:
