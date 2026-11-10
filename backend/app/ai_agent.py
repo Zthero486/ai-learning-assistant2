@@ -29,8 +29,12 @@ from typing import Callable
 from . import ai_helper, qushi
 
 MAX_ROUNDS = int(os.getenv("AI_MAX_ROUNDS", "40"))  # 一轮对话最多几轮「模型→工具→模型」
-MAX_TOOL_CALLS = int(os.getenv("AI_MAX_TOOL_CALLS", "150"))  # 一轮对话最多执行多少次工具
-MAX_REVIEWS = int(os.getenv("AI_MAX_REVIEWS", "3"))  # 质量审查不达标最多回流几次，防审查-回流死循环
+MAX_TOOL_CALLS = int(
+    os.getenv("AI_MAX_TOOL_CALLS", "150")
+)  # 一轮对话最多执行多少次工具
+MAX_REVIEWS = int(
+    os.getenv("AI_MAX_REVIEWS", "3")
+)  # 质量审查不达标最多回流几次，防审查-回流死循环
 MAX_WALL_SECONDS = int(
     os.getenv("AI_MAX_WALL_SECONDS", "900")
 )  # 单次对话总时长软上限（秒），防失控空转
@@ -119,7 +123,9 @@ class AgentContext:
         self.track = track
         self.conn = conn_factory
         self.now = now_fn
-        self.page_context = (page_context or "").strip()[:200]  # 学生当前所在页面/正在做的事
+        self.page_context = (page_context or "").strip()[
+            :200
+        ]  # 学生当前所在页面/正在做的事
         self.written: dict = {}  # 写入工具 -> 本对话成功写入的批数（预算控制用）
         self.reads: dict = {}  # 读工具 -> 本对话成功调用次数（防"通读所有资料"空转）
 
@@ -209,10 +215,16 @@ def _tool_list_syllabus(ctx: AgentContext, args: dict) -> dict:
         idx = _chapter_index(want)
         picked = []
         if idx:
-            picked = [c for c in chapters if c["title"].startswith(f"第{qushi.chapter_no(idx)}章")]
+            picked = [
+                c
+                for c in chapters
+                if c["title"].startswith(f"第{qushi.chapter_no(idx)}章")
+            ]
         if not picked:
             picked = [
-                c for c in chapters if want in c["title"] or want == c["code"] or want in c["code"]
+                c
+                for c in chapters
+                if want in c["title"] or want == c["code"] or want in c["code"]
             ]
         if not picked:
             names = [c["title"] for c in all_chapters]
@@ -263,7 +275,9 @@ def _tool_find_node(ctx: AgentContext, args: dict) -> dict:
             for r in rows
         ],
         "hint": (
-            "没匹配到就换更短的关键词（如「遵义」而不是「遵义会议的意义」）。" if not rows else ""
+            "没匹配到就换更短的关键词（如「遵义」而不是「遵义会议的意义」）。"
+            if not rows
+            else ""
         ),
     }
 
@@ -277,7 +291,8 @@ def _tool_search_content(ctx: AgentContext, args: dict) -> dict:
     conn = ctx.conn()
     try:
         mats = conn.execute(
-            "SELECT id, title, content, node_code FROM materials WHERE user_id=?", (ctx.uid,)
+            "SELECT id, title, content, node_code FROM materials WHERE user_id=?",
+            (ctx.uid,),
         ).fetchall()
         scored = []
         for m in mats:
@@ -368,7 +383,9 @@ def _tool_read_material(ctx: AgentContext, args: dict) -> dict:
         "text": body,
         "has_more": offset + length < total,
         "hint": (
-            f"未完可再读 offset={offset + length}。" if offset + length < total else "已读完。"
+            f"未完可再读 offset={offset + length}。"
+            if offset + length < total
+            else "已读完。"
         )
         + " 出题的原文依据请用 get_node_text 的教材正文，学生资料只作风格参考，不必逐篇通读。",
     }
@@ -483,16 +500,27 @@ def _tool_get_my_stats(ctx: AgentContext, args: dict) -> dict:
         conn.close()
     weak = []
     for r in per_kp:
-        acc = round((r["correct"] or 0) / r["attempts"] * 100, 1) if r["attempts"] else None
+        acc = (
+            round((r["correct"] or 0) / r["attempts"] * 100, 1)
+            if r["attempts"]
+            else None
+        )
         if acc is not None and r["attempts"] >= 2 and acc < 60:
             weak.append(
-                {"kp_id": r["id"], "title": r["title"], "accuracy": acc, "attempts": r["attempts"]}
+                {
+                    "kp_id": r["id"],
+                    "title": r["title"],
+                    "accuracy": acc,
+                    "attempts": r["attempts"],
+                }
             )
     return {
         "track": ctx.track_name,
         "totals": dict(totals),
         "weak_kps": weak,
-        "upcoming_tasks": [{"title": d["title"], "due_date": d["due_date"]} for d in due],
+        "upcoming_tasks": [
+            {"title": d["title"], "due_date": d["due_date"]} for d in due
+        ],
         "hint": "给复习建议时请结合 weak_kps 与 unresolved_wrong，不要泛泛而谈。",
     }
 
@@ -598,7 +626,10 @@ def _tool_create_material(ctx: AgentContext, args: dict) -> dict:
     if len(content) < 80:
         return {"ok": False, "error": "正文太短（<80 字），史料要有实质内容"}
     if len(content) > MAX_MATERIAL_CHARS:
-        return {"ok": False, "error": f"正文超过 {MAX_MATERIAL_CHARS} 字上限，请拆成多篇"}
+        return {
+            "ok": False,
+            "error": f"正文超过 {MAX_MATERIAL_CHARS} 字上限，请拆成多篇",
+        }
     node_code = (args.get("node_code") or "").strip() or ctx.track
     if node_code != ctx.track and not ctx.node_ok(node_code):
         return {"ok": False, "error": f"章节 {node_code} 不属于当前课程"}
@@ -646,7 +677,10 @@ def _tool_get_node_text(ctx: AgentContext, args: dict) -> dict:
     """读教材正文（syllabus_nodes.content），可分页。出题前必须用它拿原文依据。"""
     node_code = (args.get("node_code") or "").strip()
     if not node_code:
-        return {"ok": False, "error": "node_code 必填（来自 find_node / list_syllabus）"}
+        return {
+            "ok": False,
+            "error": "node_code 必填（来自 find_node / list_syllabus）",
+        }
     offset = max(_as_int(args.get("offset"), 0) or 0, 0)
     length = min(_as_int(args.get("length"), 2500) or 2500, 6000)
     conn = ctx.conn()
@@ -778,7 +812,10 @@ def _tool_highlight_text(ctx: AgentContext, args: dict) -> dict:
             return {"ok": False, "error": f"章节 {node_code} 不存在"}
         content = row["content"] or ""
         if not content.strip():
-            return {"ok": False, "error": f"「{row['title']}」暂无教材正文，没有可划的重点"}
+            return {
+                "ok": False,
+                "error": f"「{row['title']}」暂无教材正文，没有可划的重点",
+            }
         hit = _locate_quote(content, quote)
         if hit is None:
             return {
@@ -854,7 +891,10 @@ def _split_choice_options(text: str) -> list:
     if not best:
         return []
     return [
-        (key, text[start : (best[i + 1][2] if i + 1 < len(best) else len(text))].strip())
+        (
+            key,
+            text[start : (best[i + 1][2] if i + 1 < len(best) else len(text))].strip(),
+        )
         for i, (key, start, _) in enumerate(best)
     ]
 
@@ -862,24 +902,47 @@ def _split_choice_options(text: str) -> list:
 def _normalize_choice_answer(qtype: str, question: str, answer: str) -> str:
     """选择题答案归一成「字母. 选项全文」，前端 answerKey 只认开头字母。
 
-    模型可能给 "B"、"B. xxx"、整个选项原文、甚至「正确答案是坚持实事求是」——
+    模型可能给 "B"、"B. xxx"、整个选项原文、甚至同义改写（2026-11-10 实测：
+    选项「和平与发展是时代主题」，答案给成「和平与发展是当代世界的两大问题」）——
     能对上选项的就换算成字母，对不上就原样返回（前端自动回退成自评题，不会误判）。
     """
     if not re.match(r"^[A-D](\s|[.、．)）：:]|$)", (answer or "").strip().upper()):
         opts = _split_choice_options(question)
         if opts:
             a = (answer or "").strip()
+            best_key, best_score = None, 0.0
             for key, txt in opts:
                 if a and (a in txt or txt in a or a in txt.replace("，", ",")):
-                    answer = f"{key}. {txt}"
-                    break
+                    return f"{key}. {txt}"
+                # 模糊兜底：模型爱把选项改写一遍再当答案交上来。
+                # ① 最长公共前缀 ≥4 字；② 字符重叠率 ≥0.7（对选项而言），取分高者。
+                common = 0
+                for c1, c2 in zip(a, txt):
+                    if c1 == c2:
+                        common += 1
+                    else:
+                        break
+                if common >= 4:
+                    score = 0.7 + 0.01 * common
+                else:
+                    tset, aset = set(txt), set(a)
+                    score = len(tset & aset) / len(tset) if tset else 0.0
+                if score >= 0.7 and score > best_score:
+                    best_key, best_score = key, score
+            if best_key:
+                for key, txt in opts:
+                    if key == best_key:
+                        return f"{key}. {txt}"
     return answer
 
 
 def _tool_create_questions(ctx: AgentContext, args: dict) -> dict:
     kp_id = _as_int(args.get("kp_id"))
     if not kp_id:
-        return {"ok": False, "error": "kp_id 必须是数字，请先用 list_knowledge_points 查询"}
+        return {
+            "ok": False,
+            "error": "kp_id 必须是数字，请先用 list_knowledge_points 查询",
+        }
     items = args.get("questions") or []
     # 模型常见错误：把数组写成 JSON 字符串、或只传了一个对象 —— 这里都接住，
     # 别让一次格式抖动变成"重试 8 次全失败"（2026-11-07 真机评测发现的问题）
@@ -897,7 +960,8 @@ def _tool_create_questions(ctx: AgentContext, args: dict) -> dict:
     conn = ctx.conn()
     try:
         kp = conn.execute(
-            "SELECT id,title FROM knowledge_points WHERE id=? AND user_id=?", (kp_id, ctx.uid)
+            "SELECT id,title FROM knowledge_points WHERE id=? AND user_id=?",
+            (kp_id, ctx.uid),
         ).fetchone()
         if not kp:
             return {"ok": False, "error": f"知识点 {kp_id} 不存在"}
@@ -1045,7 +1109,12 @@ def _tool_create_task(ctx: AgentContext, args: dict) -> dict:
         tid = cur.lastrowid
     finally:
         conn.close()
-    return {"ok": True, "id": tid, "due_date": due, "message": f"已创建复习任务「{title}」"}
+    return {
+        "ok": True,
+        "id": tid,
+        "due_date": due,
+        "message": f"已创建复习任务「{title}」",
+    }
 
 
 def _tool_navigate(ctx: AgentContext, args: dict) -> dict:
@@ -1064,14 +1133,23 @@ def _tool_navigate(ctx: AgentContext, args: dict) -> dict:
     node = (args.get("node") or "").strip().lower()
     if route == "/syllabus" and node:
         if not _NODE_CODE_RE.match(node):
-            return {"ok": False, "error": "node 必须是真实节 code，例如 socialism-01-01"}
+            return {
+                "ok": False,
+                "error": "node 必须是真实节 code，例如 socialism-01-01",
+            }
         query = {"node": node}
         quote = (args.get("quote") or "").strip()
         if quote:
             query["hl"] = quote[:80]
         ui["query"] = query
         msg = f"已翻到 {node} 并把这段原文标出来了" if quote else f"已翻到 {node}"
-    return {"ok": True, "route": route, "label": UI_ROUTES[route], "ui": ui, "message": msg}
+    return {
+        "ok": True,
+        "route": route,
+        "label": UI_ROUTES[route],
+        "ui": ui,
+        "message": msg,
+    }
 
 
 def _tool_tag_wrong_error(ctx: AgentContext, args: dict) -> dict:
@@ -1099,7 +1177,8 @@ def _tool_tag_wrong_error(ctx: AgentContext, args: dict) -> dict:
         if not row:
             return {"ok": False, "error": "错题记录不存在，或不属于当前用户"}
         conn.execute(
-            "UPDATE wrong_book SET error_type=? WHERE id=? AND user_id=?", (label, wid, ctx.uid)
+            "UPDATE wrong_book SET error_type=? WHERE id=? AND user_id=?",
+            (label, wid, ctx.uid),
         )
         conn.commit()
     finally:
@@ -1109,7 +1188,8 @@ def _tool_tag_wrong_error(ctx: AgentContext, args: dict) -> dict:
         "ok": True,
         "wrong_id": wid,
         "error_type": label,
-        "message": f"错题 #{wid} 已归因为「{label}」" + (f"，建议：{advice}" if advice else ""),
+        "message": f"错题 #{wid} 已归因为「{label}」"
+        + (f"，建议：{advice}" if advice else ""),
     }
 
 
@@ -1193,13 +1273,21 @@ def _tool_list_memory(ctx: AgentContext, args: dict) -> dict:
 def _delete_one(ctx: AgentContext, table: str, rid: int, label: str) -> dict:
     """单行删除的公共路径：必须带 id，只删本人数据，404 时提示先核实。"""
     if rid is None:
-        return {"ok": False, "error": f"{label} 必须传 id（先调只读工具查到具体 id 再删）"}
+        return {
+            "ok": False,
+            "error": f"{label} 必须传 id（先调只读工具查到具体 id 再删）",
+        }
     conn = ctx.conn()
     try:
-        cur = conn.execute(f"DELETE FROM {table} WHERE id=? AND user_id=?", (rid, ctx.uid))
+        cur = conn.execute(
+            f"DELETE FROM {table} WHERE id=? AND user_id=?", (rid, ctx.uid)
+        )
         conn.commit()
         if not cur.rowcount:
-            return {"ok": False, "error": f"{label} #{rid} 不存在——先用只读工具核实 id，别凭记忆猜"}
+            return {
+                "ok": False,
+                "error": f"{label} #{rid} 不存在——先用只读工具核实 id，别凭记忆猜",
+            }
         return {"ok": True, "deleted": rid, "message": f"已删除{label} #{rid}"}
     finally:
         conn.close()
@@ -1232,13 +1320,18 @@ def _tool_delete_question(ctx: AgentContext, args: dict) -> dict:
         return {"ok": False, "error": "id 必填（先调只读工具查到题目 id）"}
     conn = ctx.conn()
     try:
-        cur = conn.execute("DELETE FROM questions WHERE id=? AND user_id=?", (qid, ctx.uid))
+        cur = conn.execute(
+            "DELETE FROM questions WHERE id=? AND user_id=?", (qid, ctx.uid)
+        )
         if not cur.rowcount:
             return {"ok": False, "error": f"题目 #{qid} 不存在——先核实 id"}
         conn.execute(
-            "DELETE FROM practice_records WHERE question_id=? AND user_id=?", (qid, ctx.uid)
+            "DELETE FROM practice_records WHERE question_id=? AND user_id=?",
+            (qid, ctx.uid),
         )
-        conn.execute("DELETE FROM wrong_book WHERE question_id=? AND user_id=?", (qid, ctx.uid))
+        conn.execute(
+            "DELETE FROM wrong_book WHERE question_id=? AND user_id=?", (qid, ctx.uid)
+        )
         conn.commit()
         return {
             "ok": True,
@@ -1273,7 +1366,10 @@ def _tool_create_event(ctx: AgentContext, args: dict) -> dict:
     title = (args.get("title") or "").strip()
     year = _as_int(args.get("year"))
     if not title or year is None:
-        return {"ok": False, "error": "title 与 year 都必填（year 为整数，公元前用负数）"}
+        return {
+            "ok": False,
+            "error": "title 与 year 都必填（year 为整数，公元前用负数）",
+        }
     node_code = (args.get("node_code") or "").strip() or ctx.track
     if node_code != ctx.track and not ctx.node_ok(node_code):
         return {"ok": False, "error": f"章节 {node_code} 不属于当前课程"}
@@ -1345,7 +1441,11 @@ TOOLS = {
         _spec(
             "list_syllabus",
             "列出当前课程的教材章节树（章 code + 节 code + 已有知识点数）。写数据前必须先确认节点 code。",
-            {"chapter": _S("可选：章名关键词或章 code，如「遵义」「party-03」；留空列出全部")},
+            {
+                "chapter": _S(
+                    "可选：章名关键词或章 code，如「遵义」「party-03」；留空列出全部"
+                )
+            },
         ),
         fn=_tool_list_syllabus,
     ),
@@ -1362,7 +1462,10 @@ TOOLS = {
         _spec(
             "search_content",
             "在学生的史料库、知识点、时间轴里做关键词检索，返回原文片段。回答任何史实问题前都应先调它。",
-            {"query": _S("检索关键词"), "limit": _I("返回几篇资料片段，默认 5，最多 8")},
+            {
+                "query": _S("检索关键词"),
+                "limit": _I("返回几篇资料片段，默认 5，最多 8"),
+            },
             ["query"],
         ),
         fn=_tool_search_content,
@@ -1442,7 +1545,9 @@ TOOLS = {
             "直接切换软件页面（学生说「切到/打开/带我去 XX」时调用，界面会真的跳过去）。"
             "去教材页可带 node + quote：会翻到那一节并把这段原文临时标出来。",
             {
-                "route": _S("页面路径：" + "，".join(f"{k}={v}" for k, v in UI_ROUTES.items())),
+                "route": _S(
+                    "页面路径：" + "，".join(f"{k}={v}" for k, v in UI_ROUTES.items())
+                ),
                 "node": _S("可选：节 code（如 socialism-01-01），仅 /syllabus 有效"),
                 "quote": _S("可选：要在教材里标出的原文片段（≤80 字，逐字摘自正文）"),
             },
@@ -1490,7 +1595,9 @@ TOOLS = {
             {
                 "node_code": _S("节 code，如 party-03-02（必填，先用 find_node 查）"),
                 "title": _S("知识点标题，20 字以内"),
-                "description": _S("要点正文：背景/内容/意义，150-400 字，按权威简史表述"),
+                "description": _S(
+                    "要点正文：背景/内容/意义，150-400 字，按权威简史表述"
+                ),
                 "exam_type": _S(
                     "考法，可选 recall(史实识记)/sequence(时序定位)/argument(史论结合)/apply(现实联系)"
                 ),
@@ -1589,7 +1696,9 @@ TOOLS = {
             "适合记：考试时间、专业背景、偏好、反复暴露的薄弱点、答应过的安排。"
             "只记稳定信息，不要把一次性的聊天内容存进来。",
             {
-                "kind": _S("profile(画像)/preference(偏好)/weakness(薄弱点)/plan(计划)"),
+                "kind": _S(
+                    "profile(画像)/preference(偏好)/weakness(薄弱点)/plan(计划)"
+                ),
                 "content": _S("一句话记忆，300 字以内"),
             },
             ["kind", "content"],
@@ -1713,7 +1822,9 @@ def execute_tool(ctx: AgentContext, name: str, args: dict, allow_write: bool) ->
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
     if cap is not None and result.get("ok"):
         ctx.written[name] = ctx.written.get(name, 0) + 1
-    if rcap is not None and result.get("ok") is not False:  # 部分读工具成功时不带 ok 字段
+    if (
+        rcap is not None and result.get("ok") is not False
+    ):  # 部分读工具成功时不带 ok 字段
         ctx.reads[name] = ctx.reads.get(name, 0) + 1
     return result
 
@@ -1838,7 +1949,8 @@ def _review_draft(user_goal: str, steps: list, draft: str) -> dict:
     审查是增强项，绝不能因为它把主流程卡死。
     """
     step_lines = (
-        "\n".join(f"- {s['tool']}：{s['summary']}" for s in steps[-12:]) or "（未调用工具）"
+        "\n".join(f"- {s['tool']}：{s['summary']}" for s in steps[-12:])
+        or "（未调用工具）"
     )
     judge = [
         {
@@ -1860,7 +1972,10 @@ def _review_draft(user_goal: str, steps: list, draft: str) -> dict:
         text = (msg.get("content") or "").strip()
         m = re.search(r"\{.*\}", text, re.S)
         data = json.loads(m.group(0)) if m else {}
-        return {"done": bool(data.get("done", True)), "gap": str(data.get("gap", ""))[:300]}
+        return {
+            "done": bool(data.get("done", True)),
+            "gap": str(data.get("gap", ""))[:300],
+        }
     except Exception:
         return {"done": True, "gap": ""}
 
@@ -1906,7 +2021,11 @@ def run_events(ctx: AgentContext, messages: list, allow_write: bool = True):
     convo = [{"role": "system", "content": system_prompt(ctx)}]
     # 学生最近一条请求：审查员要以它为基准判定达标与否
     user_goal = next(
-        (m["content"] for m in reversed(messages) if m.get("role") == "user" and m.get("content")),
+        (
+            m["content"]
+            for m in reversed(messages)
+            if m.get("role") == "user" and m.get("content")
+        ),
         "",
     )[:1500]
     for m in messages[-12:]:
@@ -1919,7 +2038,9 @@ def run_events(ctx: AgentContext, messages: list, allow_write: bool = True):
     used = 0
     reviews = 0
     failures: dict = {}  # (tool, 参数) -> 上次失败原因：原样重试没有意义，直接短路
-    succeeded: set = set()  # 已成功过的 (tool, 参数)：结果还在上下文里，重复调用只会白灌一遍大文本
+    succeeded: set = (
+        set()
+    )  # 已成功过的 (tool, 参数)：结果还在上下文里，重复调用只会白灌一遍大文本
     salvaged = False  # 审查拦截后「摘原文重试」只做一次，防救不回来时白耗轮次
     t_start = time.monotonic()
     stop_reason = "rounds"
@@ -1933,7 +2054,11 @@ def run_events(ctx: AgentContext, messages: list, allow_write: bool = True):
         except Exception as e:
             # 平台审查拦截多半是大段工具原文（党史长文）撑的：把原文摘掉换成一句话，
             # 保留工作记录再试一次，让前面几轮工具不至于白跑（只救一次）。
-            if _is_censorship(e) and not salvaged and any(m.get("role") == "tool" for m in convo):
+            if (
+                _is_censorship(e)
+                and not salvaged
+                and any(m.get("role") == "tool" for m in convo)
+            ):
                 salvaged = True
                 for m in convo:
                     if m.get("role") == "tool":
@@ -1971,7 +2096,12 @@ def run_events(ctx: AgentContext, messages: list, allow_write: bool = True):
             # ---- REVIEW：动过工具才有审查价值（纯问答直接放行，省一次调用）----
             if used > 0 and reviews < MAX_REVIEWS:
                 reviews += 1
-                yield {"type": "state", "state": "review", "round": round_no, "review": reviews}
+                yield {
+                    "type": "state",
+                    "state": "review",
+                    "round": round_no,
+                    "review": reviews,
+                }
                 verdict = _review_draft(user_goal, steps, text)
                 if not verdict["done"]:
                     yield {
@@ -2007,17 +2137,30 @@ def run_events(ctx: AgentContext, messages: list, allow_write: bool = True):
             return
 
         convo.append(
-            {"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls}
+            {
+                "role": "assistant",
+                "content": msg.get("content") or "",
+                "tool_calls": calls,
+            }
         )
         for tc in calls:
             fn = tc.get("function") or {}
             name = fn.get("name") or ""
             raw_args = fn.get("arguments") or "{}"
             try:
-                args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+                args = (
+                    json.loads(raw_args)
+                    if isinstance(raw_args, str)
+                    else (raw_args or {})
+                )
             except json.JSONDecodeError:
                 args = {}
-            desc = TOOLS.get(name, {}).get("spec", {}).get("function", {}).get("description", "")
+            desc = (
+                TOOLS.get(name, {})
+                .get("spec", {})
+                .get("function", {})
+                .get("description", "")
+            )
             yield {
                 "type": "step",
                 "phase": "start",
@@ -2030,7 +2173,10 @@ def run_events(ctx: AgentContext, messages: list, allow_write: bool = True):
             t_tool = time.monotonic()
 
             if used >= MAX_TOOL_CALLS:
-                result = {"ok": False, "error": "工具调用次数已达上限，请直接基于已有信息作答"}
+                result = {
+                    "ok": False,
+                    "error": "工具调用次数已达上限，请直接基于已有信息作答",
+                }
             else:
                 key = (
                     name,
@@ -2143,7 +2289,5 @@ def _summarize(name: str, result: dict) -> str:
         return f"匹配 {result['matched']} 个章节"
     if "totals" in result:
         t = result["totals"]
-        return (
-            f"资料 {t.get('materials')} / 知识点 {t.get('kps')} / 错题 {t.get('unresolved_wrong')}"
-        )
+        return f"资料 {t.get('materials')} / 知识点 {t.get('kps')} / 错题 {t.get('unresolved_wrong')}"
     return "完成"

@@ -36,12 +36,16 @@ def test_工具数量与权限划分():
         for t in full
         if t not in read_only
     )
-    assert all(not t["write"] for t in ai_agent.TOOLS.values() if t["spec"] in read_only)
+    assert all(
+        not t["write"] for t in ai_agent.TOOLS.values() if t["spec"] in read_only
+    )
 
 
 def test_只读模式下写入被拒(party_ctx):
     ctx, code = party_ctx
-    r = ai_agent.execute_tool(ctx, "create_task", {"title": "只读模式任务"}, allow_write=False)
+    r = ai_agent.execute_tool(
+        ctx, "create_task", {"title": "只读模式任务"}, allow_write=False
+    )
     assert r["ok"] is False
     assert "写入权限" in r["error"]
 
@@ -87,7 +91,9 @@ def test_生成资料入库可检索(party_ctx):
         allow_write=True,
     )
     assert r["ok"] and r["id"]
-    hit = ai_agent.execute_tool(ctx, "search_content", {"query": "遵义会议"}, allow_write=True)
+    hit = ai_agent.execute_tool(
+        ctx, "search_content", {"query": "遵义会议"}, allow_write=True
+    )
     titles = [m["title"] for m in hit["materials"]]
     assert "测试生成资料" in titles
 
@@ -106,8 +112,18 @@ def test_出题与任务(party_ctx):
         {
             "kp_id": kp["id"],
             "questions": [
-                {"type": "单选题", "question": "题干？", "answer": "A", "evidence": "原文句一"},
-                {"type": "简答", "question": "简述？", "answer": "答案", "evidence": "原文句二"},
+                {
+                    "type": "单选题",
+                    "question": "题干？",
+                    "answer": "A",
+                    "evidence": "原文句一",
+                },
+                {
+                    "type": "简答",
+                    "question": "简述？",
+                    "answer": "答案",
+                    "evidence": "原文句二",
+                },
             ],
         },
         allow_write=True,
@@ -120,14 +136,19 @@ def test_出题与任务(party_ctx):
     assert bad["ok"] is False
 
     ok = ai_agent.execute_tool(
-        ctx, "create_task", {"title": "复习要点", "due_date": "2030-01-01"}, allow_write=True
+        ctx,
+        "create_task",
+        {"title": "复习要点", "due_date": "2030-01-01"},
+        allow_write=True,
     )
     assert ok["ok"] and ok["id"]
 
 
 def test_工具异常不抛给上层(party_ctx):
     ctx, _ = party_ctx
-    r = ai_agent.execute_tool(ctx, "read_material", {"material_id": 99999999}, allow_write=True)
+    r = ai_agent.execute_tool(
+        ctx, "read_material", {"material_id": 99999999}, allow_write=True
+    )
     assert r["ok"] is False and "error" in r
     r2 = ai_agent.execute_tool(ctx, "不存在的工具", {}, allow_write=True)
     assert r2["ok"] is False
@@ -136,7 +157,8 @@ def test_工具异常不抛给上层(party_ctx):
 def test_对话接口无key时给提示(client):
     client.post("/api/profile/track", json={"track": "party"})
     r = client.post(
-        "/api/ai/chat", json={"messages": [{"role": "user", "content": "你好"}], "stream": False}
+        "/api/ai/chat",
+        json={"messages": [{"role": "user", "content": "你好"}], "stream": False},
     )
     assert r.status_code == 200
     data = r.json()
@@ -162,9 +184,13 @@ def test_工具清单接口(client):
 def _wrong_id(client) -> int:
     """造一条真实错题，返回 wrong_book.id。"""
     client.post("/api/profile/track", json={"track": "party"})
-    kp = client.post("/api/knowledge-points", json={"title": "遵义会议", "course": "党史"}).json()
+    kp = client.post(
+        "/api/knowledge-points", json={"title": "遵义会议", "course": "党史"}
+    ).json()
     client.post("/api/questions/generate", json={"kp_id": kp["id"], "num": 1})
-    qid = [q for q in client.get("/api/questions").json() if q["kp_id"] == kp["id"]][0]["id"]
+    qid = [q for q in client.get("/api/questions").json() if q["kp_id"] == kp["id"]][0][
+        "id"
+    ]
     client.post("/api/practice/submit", json={"question_id": qid, "correct": False})
     return client.get("/api/wrong-book").json()[0]["id"]
 
@@ -183,7 +209,10 @@ def test_错因归因打标签(client):
     assert item["error_type"] == "时序错位"
     # 也接受直接写中文分类
     r2 = ai_agent.execute_tool(
-        ctx, "tag_wrong_error", {"wrong_id": wid, "error_type": "记忆不牢"}, allow_write=True
+        ctx,
+        "tag_wrong_error",
+        {"wrong_id": wid, "error_type": "记忆不牢"},
+        allow_write=True,
     )
     assert r2["ok"] is True
     assert client.get("/api/wrong-book").json()[0]["error_type"] == "记忆不牢"
@@ -194,18 +223,29 @@ def test_错因归因的边界(client):
     ctx = ai_agent.AgentContext(client.user_id, "party", app_main.db, app_main.now)
     # 分类不在词表里 → 拒绝，提示可选值
     bad = ai_agent.execute_tool(
-        ctx, "tag_wrong_error", {"wrong_id": wid, "error_type": "心情不好"}, allow_write=True
+        ctx,
+        "tag_wrong_error",
+        {"wrong_id": wid, "error_type": "心情不好"},
+        allow_write=True,
     )
     assert bad["ok"] is False and "error_type" in bad["error"]
     # 别人的错题 → 拒绝（用户隔离）
-    other = ai_agent.AgentContext(client.user_id + 999999, "party", app_main.db, app_main.now)
+    other = ai_agent.AgentContext(
+        client.user_id + 999999, "party", app_main.db, app_main.now
+    )
     mine = ai_agent.execute_tool(
-        other, "tag_wrong_error", {"wrong_id": wid, "error_type": "concept"}, allow_write=True
+        other,
+        "tag_wrong_error",
+        {"wrong_id": wid, "error_type": "concept"},
+        allow_write=True,
     )
     assert mine["ok"] is False
     # 只读模式 → 拒绝
     ro = ai_agent.execute_tool(
-        ctx, "tag_wrong_error", {"wrong_id": wid, "error_type": "concept"}, allow_write=False
+        ctx,
+        "tag_wrong_error",
+        {"wrong_id": wid, "error_type": "concept"},
+        allow_write=False,
     )
     assert ro["ok"] is False and "写入权限" in ro["error"]
 
@@ -213,11 +253,17 @@ def test_错因归因的边界(client):
 def test_记忆沉淀与查重(party_ctx):
     ctx, _ = party_ctx
     r1 = ai_agent.execute_tool(
-        ctx, "save_memory", {"kind": "weakness", "content": "时序题反复错"}, allow_write=True
+        ctx,
+        "save_memory",
+        {"kind": "weakness", "content": "时序题反复错"},
+        allow_write=True,
     )
     assert r1["ok"] and "duplicated" not in r1
     r2 = ai_agent.execute_tool(
-        ctx, "save_memory", {"kind": "weakness", "content": "时序题反复错"}, allow_write=True
+        ctx,
+        "save_memory",
+        {"kind": "weakness", "content": "时序题反复错"},
+        allow_write=True,
     )
     assert r2["duplicated"] is True
     # 非法 kind 拒绝
@@ -284,7 +330,9 @@ def test_状态机_审查不达标会回流(party_ctx, monkeypatch):
         {"done": True, "gap": ""},
     ]
     monkeypatch.setattr(ai_agent.ai_helper, "chat_completion", fake)
-    monkeypatch.setattr(ai_agent, "_review_draft", lambda goal, steps, draft: verdicts.pop(0))
+    monkeypatch.setattr(
+        ai_agent, "_review_draft", lambda goal, steps, draft: verdicts.pop(0)
+    )
 
     events = list(
         ai_agent.run_events(
@@ -330,7 +378,9 @@ def test_轨迹事件_含思考参数与耗时(party_ctx, monkeypatch):
 
     thinks = [e for e in events if e.get("type") == "thinking"]
     assert thinks and thinks[0]["round"] == 1 and "学习数据" in thinks[0]["text"]
-    starts = [e for e in events if e.get("type") == "step" and e.get("phase") == "start"]
+    starts = [
+        e for e in events if e.get("type") == "step" and e.get("phase") == "start"
+    ]
     ends = [e for e in events if e.get("type") == "step" and e.get("phase") == "end"]
     assert starts[0]["tool"] == "get_my_stats" and starts[0]["round"] == 1
     assert starts[0]["args"] == {}  # 参数原样下发，界面能显示 AI 到底传了什么
@@ -341,14 +391,20 @@ def test_轨迹事件_含思考参数与耗时(party_ctx, monkeypatch):
 def test_状态机_回流有上限(party_ctx, monkeypatch):
     """质检员一直不达标也不能死循环：到 MAX_REVIEWS 就收尾。"""
     ctx, _ = party_ctx
-    fake, _calls = _scripted_chat([("tools", "get_my_stats"), ("text", "总是差一点的答复")])
+    fake, _calls = _scripted_chat(
+        [("tools", "get_my_stats"), ("text", "总是差一点的答复")]
+    )
     monkeypatch.setattr(ai_agent.ai_helper, "chat_completion", fake)
     monkeypatch.setattr(
-        ai_agent, "_review_draft", lambda goal, steps, draft: {"done": False, "gap": "还是不行"}
+        ai_agent,
+        "_review_draft",
+        lambda goal, steps, draft: {"done": False, "gap": "还是不行"},
     )
 
     events = list(
-        ai_agent.run_events(ctx, [{"role": "user", "content": "随便看看"}], allow_write=True)
+        ai_agent.run_events(
+            ctx, [{"role": "user", "content": "随便看看"}], allow_write=True
+        )
     )
 
     assert _states(events).count("review") == ai_agent.MAX_REVIEWS
@@ -363,7 +419,9 @@ def test_状态机_纯问答跳过审查(party_ctx, monkeypatch):
     reviewed = []
     monkeypatch.setattr(ai_agent.ai_helper, "chat_completion", fake)
     monkeypatch.setattr(
-        ai_agent, "_review_draft", lambda *a: reviewed.append(1) or {"done": True, "gap": ""}
+        ai_agent,
+        "_review_draft",
+        lambda *a: reviewed.append(1) or {"done": True, "gap": ""},
     )
 
     events = list(
@@ -384,12 +442,18 @@ def test_状态机_重复调用被短路(party_ctx, monkeypatch):
     """同样的工具+参数刚成功过就该短路提示，别再把大结果原文灌一遍上下文。"""
     ctx, _ = party_ctx
     fake, calls = _scripted_chat(
-        [("tools", "get_my_stats"), ("tools", "get_my_stats"), ("text", "已看完你的学习数据。")]
+        [
+            ("tools", "get_my_stats"),
+            ("tools", "get_my_stats"),
+            ("text", "已看完你的学习数据。"),
+        ]
     )
     monkeypatch.setattr(ai_agent.ai_helper, "chat_completion", fake)
     monkeypatch.setattr(ai_agent, "_review_draft", lambda *a: {"done": True, "gap": ""})
 
-    events = list(ai_agent.run_events(ctx, [{"role": "user", "content": "看看我的情况"}]))
+    events = list(
+        ai_agent.run_events(ctx, [{"role": "user", "content": "看看我的情况"}])
+    )
 
     done = events[-1]
     assert done["type"] == "done" and done["tool_calls"] == 1  # 第二次没真正执行
@@ -398,7 +462,9 @@ def test_状态机_重复调用被短路(party_ctx, monkeypatch):
     assert len(tool_msgs) == 2
     assert "不要原样重复调用" in tool_msgs[1]["content"]
     # 界面摘要要能说明是被拦下的重复调用
-    dup_steps = [e for e in events if e.get("type") == "step" and e.get("phase") == "end"]
+    dup_steps = [
+        e for e in events if e.get("type") == "step" and e.get("phase") == "end"
+    ]
     assert "重复调用" in dup_steps[-1]["summary"]
 
 
@@ -416,7 +482,10 @@ def test_状态机_审查拦截摘原文重试(party_ctx, monkeypatch):
                     {
                         "id": "call_1",
                         "type": "function",
-                        "function": {"name": "list_knowledge_points", "arguments": "{}"},
+                        "function": {
+                            "name": "list_knowledge_points",
+                            "arguments": "{}",
+                        },
                     }
                 ],
             }
@@ -427,7 +496,9 @@ def test_状态机_审查拦截摘原文重试(party_ctx, monkeypatch):
     monkeypatch.setattr(ai_agent.ai_helper, "chat_completion", fake)
     monkeypatch.setattr(ai_agent, "_review_draft", lambda *a: {"done": True, "gap": ""})
 
-    events = list(ai_agent.run_events(ctx, [{"role": "user", "content": "把知识点过一遍"}]))
+    events = list(
+        ai_agent.run_events(ctx, [{"role": "user", "content": "把知识点过一遍"}])
+    )
 
     # 不出 error 事件，救回来正常收尾
     assert not [e for e in events if e["type"] == "error"]
@@ -455,7 +526,9 @@ def test_审查拦截直接报错是人话(party_ctx, monkeypatch):
 def test_list知识点_上限30(party_ctx):
     """limit 传 60 也最多给 30 条：大结果反复回灌是审查拦截的根源。"""
     ctx, _ = party_ctx
-    r = ai_agent.execute_tool(ctx, "list_knowledge_points", {"limit": 60}, allow_write=False)
+    r = ai_agent.execute_tool(
+        ctx, "list_knowledge_points", {"limit": 60}, allow_write=False
+    )
     assert "error" not in r
     assert len(r["items"]) <= 30
 
@@ -465,7 +538,9 @@ def test_list知识点_上限30(party_ctx):
 
 def test_删除任务(party_ctx):
     ctx, _ = party_ctx
-    r = ai_agent.execute_tool(ctx, "create_task", {"title": "待删任务"}, allow_write=True)
+    r = ai_agent.execute_tool(
+        ctx, "create_task", {"title": "待删任务"}, allow_write=True
+    )
     tid = r["id"]
     d = ai_agent.execute_tool(ctx, "delete_task", {"id": tid}, allow_write=True)
     assert d["ok"] and d["deleted"] == tid
@@ -486,7 +561,10 @@ def test_删除必带id且不许跨用户(party_ctx):
 def test_删除题目级联清错题(party_ctx):
     ctx, code = party_ctx
     kp = ai_agent.execute_tool(
-        ctx, "create_knowledge_point", {"node_code": code, "title": "级联测试点"}, allow_write=True
+        ctx,
+        "create_knowledge_point",
+        {"node_code": code, "title": "级联测试点"},
+        allow_write=True,
     )
     qs = ai_agent.execute_tool(
         ctx,
@@ -517,10 +595,12 @@ def test_删除题目级联清错题(party_ctx):
     d = ai_agent.execute_tool(ctx, "delete_question", {"id": qid}, allow_write=True)
     assert d["ok"]
     conn = ctx.conn()
-    left_q = conn.execute("SELECT COUNT(*) FROM questions WHERE id=?", (qid,)).fetchone()[0]
-    left_w = conn.execute("SELECT COUNT(*) FROM wrong_book WHERE question_id=?", (qid,)).fetchone()[
-        0
-    ]
+    left_q = conn.execute(
+        "SELECT COUNT(*) FROM questions WHERE id=?", (qid,)
+    ).fetchone()[0]
+    left_w = conn.execute(
+        "SELECT COUNT(*) FROM wrong_book WHERE question_id=?", (qid,)
+    ).fetchone()[0]
     conn.close()
     assert left_q == 0 and left_w == 0
 
@@ -528,7 +608,10 @@ def test_删除题目级联清错题(party_ctx):
 def test_清空错题本(party_ctx):
     ctx, code = party_ctx
     kp = ai_agent.execute_tool(
-        ctx, "create_knowledge_point", {"node_code": code, "title": "清空测试点"}, allow_write=True
+        ctx,
+        "create_knowledge_point",
+        {"node_code": code, "title": "清空测试点"},
+        allow_write=True,
     )
     qs = ai_agent.execute_tool(
         ctx,
@@ -557,7 +640,9 @@ def test_清空错题本(party_ctx):
     r = ai_agent.execute_tool(ctx, "clear_wrong_book", {}, allow_write=True)
     assert r["ok"] and r["cleared"] >= 1
     conn = ctx.conn()
-    n = conn.execute("SELECT COUNT(*) FROM wrong_book WHERE user_id=?", (ctx.uid,)).fetchone()[0]
+    n = conn.execute(
+        "SELECT COUNT(*) FROM wrong_book WHERE user_id=?", (ctx.uid,)
+    ).fetchone()[0]
     conn.close()
     assert n == 0
 
@@ -638,3 +723,34 @@ def test_单选题选项拼题干与答案归一(party_ctx):
     conn.close()
     assert row["question"].count("A.") == 1  # 没有重复拼选项
     assert row["answer"].upper().startswith("C")
+    # 模型把选项改写一遍再当答案交（2026-11-10 实测）——模糊兜底也要换算成字母
+    r3 = ai_agent.execute_tool(
+        ctx,
+        "create_questions",
+        {
+            "kp_id": kp["id"],
+            "questions": [
+                {
+                    "type": "单选题",
+                    "question": "战略判断是？\nA. 战争与革命是时代主题\nB. 和平与发展是时代主题\nC. 国防建设优先于经济建设\nD. 早打大打打核战争",
+                    "answer": "和平与发展是当代世界的两大问题",  # 与 B 选项文字不重合的改写
+                    "evidence": "邓小平作出和平与发展是时代主题的判断。",
+                },
+                {
+                    "type": "单选题",
+                    "question": "完全对不上选项的？\nA. 甲乙丙\nB. 丁戊己\nC. 庚辛壬",
+                    "answer": "八竿子打不着的答案",  # 模糊兜底失败 → 原样入库，前端回退自评
+                    "evidence": "依据",
+                },
+            ],
+        },
+        allow_write=True,
+    )
+    assert r3["ok"] and len(r3["ids"]) == 2
+    conn = ctx.conn()
+    rows = conn.execute(
+        "SELECT answer FROM questions WHERE id IN (?,?) ORDER BY id", r3["ids"]
+    ).fetchall()
+    conn.close()
+    assert rows[0][0].startswith("B"), rows[0][0]  # 改写答案 → 换算成字母
+    assert rows[1][0] == "八竿子打不着的答案"  # 对不上就原样返回，前端自评兜底

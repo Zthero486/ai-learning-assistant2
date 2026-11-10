@@ -78,7 +78,8 @@ CASES = [
         "prompt": "把井冈山革命根据地这一节的核心内容整理成一篇资料存进我的史料笔记",
         "allow_write": True,
         "check": lambda f, c: (
-            len(_ok_steps(f, "create_material")) >= 1 and _count_table(c, "materials") >= 1,
+            len(_ok_steps(f, "create_material")) >= 1
+            and _count_table(c, "materials") >= 1,
             f"materials 表 {_count_table(c, 'materials')} 条",
         ),
     },
@@ -108,7 +109,8 @@ CASES = [
         "prompt": "帮我在新中国史的第一章建一条知识点：开国大典",
         "allow_write": True,
         "check": lambda f, c: (
-            "create_knowledge_point" not in [s["tool"] for s in f.get("steps", []) if s["ok"]],
+            "create_knowledge_point"
+            not in [s["tool"] for s in f.get("steps", []) if s["ok"]],
             f"工具 {_steps_of(f)}（create_knowledge_point 应失败或未调用）",
         ),
     },
@@ -118,7 +120,8 @@ CASES = [
         "prompt": "你好，你是谁？你能帮我做什么？",
         "allow_write": True,
         "check": lambda f, c: (
-            all(not s["tool"].startswith("create_") for s in f.get("steps", [])) and _has_reply(f),
+            all(not s["tool"].startswith("create_") for s in f.get("steps", []))
+            and _has_reply(f),
             f"工具 {_steps_of(f)}（允许只读工具，不允许写入）",
         ),
     },
@@ -128,7 +131,9 @@ CASES = [
         "prompt": "帮我建一条知识点：秋收起义",
         "allow_write": False,
         "check": lambda f, c: (
-            not any(s["tool"].startswith("create_") and s["ok"] for s in f.get("steps", [])),
+            not any(
+                s["tool"].startswith("create_") and s["ok"] for s in f.get("steps", [])
+            ),
             f"工具 {_steps_of(f)}",
         ),
     },
@@ -160,7 +165,8 @@ CASES = [
         "allow_write": True,
         "check": lambda f, c: (
             any(
-                s["tool"] == "navigate" and (s.get("args") or {}).get("route") == "/materials"
+                s["tool"] == "navigate"
+                and (s.get("args") or {}).get("route") == "/materials"
                 for s in f.get("steps", [])
             ),
             f"工具 {_steps_of(f)}",
@@ -177,7 +183,18 @@ def build_env():
     env = dict(os.environ)
     env["AI_DISABLE_BUILTIN"] = "1"
     env["AI_ASR_URL"] = ""
-    for k in ("AI_API_KEY", "AI_BASE_URL", "AI_MODEL", "AI_PROXY"):
+    # 备用渠道也要带进来，否则主渠道一限流评测就全灭，
+    # 看不出 failover 是否真的能接管（2026-11-10 实测：漏 AI_BACKUP_* 导致 11 场景全 429）
+    _AI_KEYS = (
+        "AI_API_KEY",
+        "AI_BASE_URL",
+        "AI_MODEL",
+        "AI_PROXY",
+        "AI_BACKUP_BASE_URL",
+        "AI_BACKUP_API_KEY",
+        "AI_BACKUP_MODEL",
+    )
+    for k in _AI_KEYS:
         env.pop(k, None)
     # key 来自 backend/.env（评测机的开发配置）；路径环境全部指向临时目录
     env_file = ROOT / "backend" / ".env"
@@ -186,7 +203,7 @@ def build_env():
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
                 k, _, v = line.partition("=")
-                if k.strip() in ("AI_API_KEY", "AI_BASE_URL", "AI_MODEL", "AI_PROXY") and v.strip():
+                if k.strip() in _AI_KEYS and v.strip():
                     env[k.strip()] = v.strip()
     return tmp, env
 
@@ -199,8 +216,8 @@ def prepare_db(tmp, env):
     os.environ.update(env)
     from app import apppaths
 
-    apppaths.app_base_dir = lambda: tmp          # 数据目录 → 临时目录
-    apppaths.env_file = lambda: tmp / ".env"     # 不存在 → 不会误读开发库的 .env
+    apppaths.app_base_dir = lambda: tmp  # 数据目录 → 临时目录
+    apppaths.env_file = lambda: tmp / ".env"  # 不存在 → 不会误读开发库的 .env
     import app.main as main  # noqa: E402  首次导入即初始化临时库（init_db 自带 demo 账号）
 
     conn = main.db()
@@ -211,20 +228,28 @@ def prepare_db(tmp, env):
     from fastapi.testclient import TestClient
 
     tc = TestClient(main.app)
-    tok = tc.post("/api/auth/login", json={"username": "demo", "password": "demo123"}).json()["token"]
+    tok = tc.post(
+        "/api/auth/login", json={"username": "demo", "password": "demo123"}
+    ).json()["token"]
     h = {"Authorization": f"Bearer {tok}"}
     tc.post("/api/profile/track", json={"track": "party"}, headers=h)
     tc.post(
         "/api/materials/upload",
         headers=h,
-        files={"file": ("背景.txt", (
-            "第一章 中国共产党的创建与投身大革命的洪流。"
-            "1919年五四运动标志新民主主义革命开端。1921年7月中共一大在上海召开，"
-            "宣告中国共产党成立。1922年中共二大提出反帝反封建的民主革命纲领。"
-            "1923年京汉铁路工人大罢工。1924年1月国民党一大召开，第一次国共合作正式形成，"
-            "1925年五卅运动掀起大革命高潮。1926年北伐战争开始。"
-            "1927年蒋介石发动四一二反革命政变，大革命失败。"
-        ).encode("utf-8"), "text/plain")},
+        files={
+            "file": (
+                "背景.txt",
+                (
+                    "第一章 中国共产党的创建与投身大革命的洪流。"
+                    "1919年五四运动标志新民主主义革命开端。1921年7月中共一大在上海召开，"
+                    "宣告中国共产党成立。1922年中共二大提出反帝反封建的民主革命纲领。"
+                    "1923年京汉铁路工人大罢工。1924年1月国民党一大召开，第一次国共合作正式形成，"
+                    "1925年五卅运动掀起大革命高潮。1926年北伐战争开始。"
+                    "1927年蒋介石发动四一二反革命政变，大革命失败。"
+                ).encode("utf-8"),
+                "text/plain",
+            )
+        },
     )
     return main, tc, h
 
@@ -235,17 +260,25 @@ def run_case(main, tc, h, case):
     uid = tc.get("/api/auth/me", headers=h).json()["user"]["id"]
     ctx = ai_agent.AgentContext(uid, "party", main.db, main.now)
     t0 = time.time()
-    final = ai_agent.run(ctx, [{"role": "user", "content": case["prompt"]}],
-                         allow_write=case["allow_write"])
+    final = ai_agent.run(
+        ctx,
+        [{"role": "user", "content": case["prompt"]}],
+        allow_write=case["allow_write"],
+    )
     conn = main.db()
     try:
         ok, why = case["check"](final, conn)
     finally:
         conn.close()
     return {
-        "id": case["id"], "title": case["title"], "ok": bool(ok), "why": why,
-        "tools": _steps_of(final), "rounds": final.get("rounds"),
-        "tool_calls": final.get("tool_calls"), "secs": round(time.time() - t0, 1),
+        "id": case["id"],
+        "title": case["title"],
+        "ok": bool(ok),
+        "why": why,
+        "tools": _steps_of(final),
+        "rounds": final.get("rounds"),
+        "tool_calls": final.get("tool_calls"),
+        "secs": round(time.time() - t0, 1),
         "reply_head": ((final.get("reply") or "")[:100]).replace("\n", " "),
         "error": final.get("error"),
     }
@@ -279,13 +312,19 @@ def main():
             try:
                 r = run_case(main, tc, h, c)
             except Exception as e:  # 单例崩不拖垮整场
-                r = {"id": c["id"], "title": c["title"], "ok": False,
-                     "why": f"评测器异常：{type(e).__name__}: {e}"}
+                r = {
+                    "id": c["id"],
+                    "title": c["title"],
+                    "ok": False,
+                    "why": f"评测器异常：{type(e).__name__}: {e}",
+                }
             passed += r["ok"]
             mark = "PASS" if r["ok"] else "FAIL"
-            line = (f"[{mark}] #{r['id']} {r['title']}  ({r.get('secs','?')}s, "
-                    f"轮次{r.get('rounds')}, 调用{r.get('tool_calls')})\n"
-                    f"       工具: {r.get('tools')}\n       判据: {r['why']}")
+            line = (
+                f"[{mark}] #{r['id']} {r['title']}  ({r.get('secs','?')}s, "
+                f"轮次{r.get('rounds')}, 调用{r.get('tool_calls')})\n"
+                f"       工具: {r.get('tools')}\n       判据: {r['why']}"
+            )
             if r.get("error"):
                 line += f"\n       error: {r['error']}"
             lines.append(line)
@@ -297,7 +336,9 @@ def main():
         shutil.rmtree(tmp, ignore_errors=True)
         OUT.parent.mkdir(exist_ok=True)
         OUT.write_text(
-            f"Agent 评测报告  {datetime.now():%Y-%m-%d %H:%M}\n" + "\n".join(lines) + "\n",
+            f"Agent 评测报告  {datetime.now():%Y-%m-%d %H:%M}\n"
+            + "\n".join(lines)
+            + "\n",
             encoding="utf-8",
         )
 
