@@ -74,6 +74,13 @@ WRITE_BUDGETS = {
     "clear_wrong_book": 1,
 }
 
+# 单次对话的读工具次数上限：模型找不到目标时会一篇篇往下翻，
+# 真机里出现过「一个出题请求连读 12 篇资料、白烧 51 秒」的空转。
+READ_BUDGETS = {
+    "read_material": 12,
+    "get_node_text": 30,
+}
+
 EXAM_TYPES = {
     "recall": "史实识记",
     "sequence": "时序定位",
@@ -104,6 +111,7 @@ class AgentContext:
         self.now = now_fn
         self.page_context = (page_context or "").strip()[:200]  # 学生当前所在页面/正在做的事
         self.written: dict = {}  # 写入工具 -> 本对话成功写入的批数（预算控制用）
+        self.reads: dict = {}  # 读工具 -> 本对话成功调用次数（防"通读所有资料"空转）
 
     @property
     def track_name(self) -> str:
@@ -140,6 +148,29 @@ def _as_int(value, default=None):
         return default
 
 
+_CN_NUM = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6,
+           "七": 7, "八": 8, "九": 9, "十": 10, "十一": 11, "十二": 12}
+
+
+def _chapter_index(text: str):
+    """把「第三章 / 第3章 / 3 / 三」归一成章序号；认不出返回 None。
+
+    模型传 chapter 时经常给中文数字，而目录标题是「第三章 xxx」——
+    直接字符串包含虽然能蒙对，但传「第3章」就失效了（会退化成全量目录，
+    193 行被 6000 字截断，模型反而看不到目标章）。
+    """
+    t = (text or "").strip()
+    if not t:
+        return None
+    m = re.search(r"(\d{1,2})", t)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"第?([一二三四五六七八九十]{1,3})", t)
+    if m:
+        return _CN_NUM.get(m.group(1))
+    return None
+
+
 # ==================== 只读工具 ====================
 
 def _tool_list_syllabus(ctx: AgentContext, args: dict) -> dict:
@@ -150,13 +181,27 @@ def _tool_list_syllabus(ctx: AgentContext, args: dict) -> dict:
     finally:
         conn.close()
     want = (args.get("chapter") or "").strip()
+    all_chapters = chapters
     if want:
-        picked = [
-            c for c in chapters
-            if want in c["title"] or want == c["code"] or want in c["code"]
-        ]
-        if picked:
-            chapters = picked
+        idx = _chapter_index(want)
+        picked = []
+        if idx:
+            picked = [c for c in chapters if c["title"].startswith(f"第{qushi.chapter_no(idx)}章")]
+        if not picked:
+            picked = [
+                c for c in chapters
+                if want in c["title"] or want == c["code"] or want in c["code"]
+            ]
+        if not picked:
+            names = [c["title"] for c in all_chapters]
+            return {
+                "ok": False,
+                "error": f"没找到「{want}」对应的一章（当前课程共 {len(all_chapters)} 章）",
+                "chapters": names,
+                "hint": "从上面的章名里挑一个重试，或换个说法（如“第三章”/“第3章”）；"
+                        "需要完整目录时不传 chapter。",
+            }
+        chapters = picked
     lines = []
     for c in chapters:
         lines.append(f"{c['code']} {c['title']}（知识点 {c['kp']} / 题 {c['q']}）")
@@ -279,7 +324,8 @@ def _tool_read_material(ctx: AgentContext, args: dict) -> dict:
         "offset": offset,
         "text": body,
         "has_more": offset + length < total,
-        "hint": f"未完可再读 offset={offset + length}。" if offset + length < total else "已读完。",
+        "hint": (f"未完可再读 offset={offset + length}。" if offset + length < total else "已读完。")
+                + " 出题的原文依据请用 get_node_text 的教材正文，学生资料只作风格参考，不必逐篇通读。",
     }
 
 
@@ -507,7 +553,31 @@ def _tool_get_node_text(ctx: AgentContext, args: dict) -> dict:
     finally:
         conn.close()
     if not row:
-        return {"ok": False, "error": f"章节 {node_code} 不存在"}
+        # 模型猜错 code 时会一路重试（真机里连错 2 次还接着猜），
+        # 直接把同一章的真实节 code 摊开给它，让它一次改对
+        avail = []
+        m = re.match(r"^([a-z]+-\d{1,2})(?:-\d{1,2})*$", node_code)
+        if m:
+            conn = ctx.conn()
+            try:
+                avail = [
+                    {"code": r["code"], "title": r["title"]}
+                    for r in conn.execute(
+                        "SELECT code,title FROM syllabus_nodes "
+                        "WHERE code LIKE ? AND level=2 ORDER BY order_no LIMIT 40",
+                        (m.group(1) + "-%",),
+                    )
+                ]
+            finally:
+                conn.close()
+        return {
+            "ok": False,
+            "error": f"章节 {node_code} 不存在"
+                     + (f"，{m.group(1)} 下真实的节是：{', '.join(a['code'] for a in avail[:12])}"
+                        if avail else "，请先用 list_syllabus 确认节 code"),
+            "available": avail,
+            "hint": "只能从 available 里挑 code，不要自己拼数字。",
+        }
     content = row["content"] or ""
     if not content.strip():
         return {"ok": False,
@@ -1279,12 +1349,20 @@ def execute_tool(ctx: AgentContext, name: str, args: dict, allow_write: bool) ->
         return {"ok": False,
                 "error": f"本轮对话{name}已成功 {ctx.written[name]} 批（上限 {cap}），"
                          "先收尾向学生汇报；他需要更多会再开口"}
+    # 读工具同样限次：找不到目标时模型容易一篇篇往下翻，读得越多越难收尾
+    rcap = READ_BUDGETS.get(name)
+    if rcap is not None and ctx.reads.get(name, 0) >= rcap:
+        return {"ok": False,
+                "error": f"本轮对话{name}已读 {rcap} 次（上限）。已经拿到不少材料了，"
+                         "请基于现有内容作答或提问澄清，不要再继续翻。"}
     try:
         result = tool["fn"](ctx, args or {})
     except Exception as e:  # 工具内部异常不该打断整轮对话，回给模型让它换参数重试
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
     if cap is not None and result.get("ok"):
         ctx.written[name] = ctx.written.get(name, 0) + 1
+    if rcap is not None and result.get("ok") is not False:  # 部分读工具成功时不带 ok 字段
+        ctx.reads[name] = ctx.reads.get(name, 0) + 1
     return result
 
 

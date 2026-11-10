@@ -253,7 +253,9 @@ const renderedParas = computed(() => {
   // 高亮区间（含 ?hl= 的临时定位）合并进段落后切块渲染
   const marks = notes.value.map((n) => ({ o: n.offset, l: n.length, note: n }))
   if (flash.value) marks.push({ o: flash.value.offset, l: flash.value.length, note: { id: 0, color: 'flash' } })
-  marks.sort((a, b) => a.o - b.o)
+  // 同起点时 flash（AI 带来的临时定位）排前面 —— 下面“重叠丢弃后到者”否则会
+  // 把 flash 丢掉，学生点了 AI 的原文定位却什么都看不到（真机实测踩过）
+  marks.sort((a, b) => a.o - b.o || (a.note.color === 'flash' ? -1 : b.note.color === 'flash' ? 1 : 0))
   const merged = []
   for (const m of marks) {
     const last = merged[merged.length - 1]
@@ -579,8 +581,13 @@ onMounted(async () => {
         await pick(first.chars ? first.code : (first.sections[0]?.code || first.code))
       }
       // /syllabus?node=xx&hl=原文片段：AI 词条卡「原文节选」点击跳转，定位并临时高亮
-      const hlq = String(route.query.hl || '').trim()
-      if (hlq) locateQuote(hlq)
+      const hlq = String(route.query.hl || '').replace(/\+/g, ' ').trim()
+      if (hlq) {
+        // pick() 里给 node 赋值触发的 watch（会清 flash）是异步 flush 的，
+        // 不等它跑完就设 flash 会被它清掉 —— 先 nextTick 让“清”发生完再“设”
+        await nextTick()
+        locateQuote(hlq)
+      }
     }
   } catch (e) {
     ElMessage.error(e.message)
@@ -598,7 +605,10 @@ watch(() => [route.query.node, route.query.hl], async ([n, hl]) => {
     opened.value = [hit.code]
     await pick(n)
   }
-  if (hl) locateQuote(String(hl))
+  if (hl) {
+    await nextTick() // 同上：等 watch(node) 的 flash 清空先落地
+    locateQuote(String(hl).replace(/\+/g, ' '))
+  }
 })
 </script>
 
